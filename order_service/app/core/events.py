@@ -42,7 +42,7 @@ async def init_events() -> None:
         logger.info("✅ Event publishing infrastructure initialized successfully")
 
     except Exception as e:
-        logger.warning(f"⚠️ Event publishing initialization failed: {e}")
+        logger.warning(f"Event publishing initialization failed: {e}")
         logger.info("Service will continue without event publishing (degraded mode)")
 
 

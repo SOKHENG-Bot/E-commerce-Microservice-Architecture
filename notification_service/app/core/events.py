@@ -37,7 +37,9 @@ async def init_events() -> None:
         try:
             await _kafka_publisher.start(timeout=5.0)  # Reduced timeout
         except Exception as e:
-            logger.warning(f"Kafka publisher start failed, continuing in degraded mode: {e}")
+            logger.warning(
+                f"Kafka publisher start failed, continuing in degraded mode: {e}"
+            )
             # Continue anyway - the publisher will work when Kafka becomes available
 
         # Initialize notification event producer
@@ -46,7 +48,7 @@ async def init_events() -> None:
         logger.info("✅ Event publishing infrastructure initialized successfully")
 
     except Exception as e:
-        logger.warning(f"⚠️ Event publishing initialization failed: {e}")
+        logger.warning(f"Event publishing initialization failed: {e}")
         logger.info("Service will continue without event publishing (degraded mode)")
 
 

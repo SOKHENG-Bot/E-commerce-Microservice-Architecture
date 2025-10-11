@@ -53,15 +53,3 @@ class PermissionClient:
     async def close(self):
         """Close the HTTP client"""
         await self.client.aclose()
-
-
-# Usage example for other services:
-#
-# from .user_permission_client import PermissionClient
-#
-# async def check_admin_access(user_id: int, token: str) -> bool:
-#     client = PermissionClient("http://user-service:8001")
-#     try:
-#         return await client.check_user_permission(user_id, "manage_system", token)
-#     finally:
-#         await client.close()

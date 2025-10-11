@@ -256,7 +256,7 @@ def _setup_middleware(app: FastAPI) -> None:
         app.add_middleware(UserServiceRateLimitingMiddleware, rate_limiter=rate_limiter)
         logger.info("Rate limiting middleware configured")
     except Exception as e:
-        logger.warning(f"⚠️ Rate limiting unavailable: {e}")
+        logger.warning(f"Rate limiting unavailable: {e}")
 
     # 3. Request Validation - Early validation and security
     from user_service.app.middleware.security.validation_middleware import (
@@ -363,7 +363,7 @@ def _setup_routers(app: FastAPI) -> None:
         )
         logger.info("Management routes registered at /user-service/*")
     except ImportError as e:
-        logger.warning(f"⚠️ Management routes not available: {e}")
+        logger.warning(f"Management routes not available: {e}")
 
     logger.info(
         "API routes configured",
