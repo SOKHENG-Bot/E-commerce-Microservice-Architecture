@@ -1,0 +1,251 @@
+services:
+  # PostgreSQL Database for Notification Service
+  notification_postgres:
+    image: postgres:15
+    container_name: notification_postgres
+    environment:
+      POSTGRES_DB: notification
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432" # Different port to avoid conflicts
+    volumes:
+      - notification_postgres_data:/var/lib/postgresql/data
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification -d notification"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Kafka UI for monitoring Kafka topics and messages
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: notification_kafka_ui
+    ports:
+      - "8081:8080" # Different port to avoid conflicts with main setup
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "notification-service-kafka"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9093"
+      KAFKA_CLUSTERS_0_ZOOKEEPER: "zookeeper:2181"
+    networks:
+      - ecommerce-network
+
+  # Redis for Notification Service (Caching & Rate Limiting)
+  notification_redis:
+    image: redis:latest
+    container_name: notification_redis
+    ports:
+      - "6382:6379" # Different port to avoid conflicts
+    command: redis-server --appendonly yes
+    volumes:
+      - notification_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Notification Service Nginx Load Balancer
+  notification_service_nginx:
+    image: nginx:alpine
+    container_name: notification_service_nginx
+    ports:
+      - "8020:80" # Notification service nginx on port 8020
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../nginx/status.html:/usr/share/nginx/html/status.html:ro
+    depends_on:
+      - notification_service_1
+      - notification_service_2
+      - notification_service_3
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1/nginx-health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Notification Service Instance 1
+  notification_service_1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: notification_service_1
+    ports:
+      - "8021:8000"
+    environment:
+      # Application
+      APP_NAME: "Notification Service"
+      APP_VERSION: "1.0.0"
+      DEBUG: "true"
+      ENVIRONMENT: "development"
+      SERVICE_NAME: "notification_service_1"
+
+      # Service URLs
+      NOTIFICATION_SERVICE_URL: "http://notification_service_1:8000"
+      NOTIFICATION_SERVICE_HEALTH: "http://notification_service_1:8000/health"
+
+      # Database
+      NOTIFICATION_DATABASE_URL: "postgresql+asyncpg://notification:password@notification_postgres:5432/notification"
+      POSTGRES_DB: "notification"
+      POSTGRES_USER: "notification"
+      POSTGRES_PASSWORD: "password"
+
+      # Security
+      SECRET_KEY: "notification_service_secret_key_2024_development_only"
+      ALGORITHM: "HS256"
+
+      # Redis
+      REDIS_URL: "redis://notification_redis:6379/4"
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      KAFKA_GROUP_ID: "notification-service-group"
+
+      # CORS
+      CORS_ORIGINS: '["*"]'
+      CORS_CREDENTIALS: "true"
+      CORS_METHODS: '["*"]'
+      CORS_HEADERS: '["*"]'
+
+      # Logging
+      LOG_LEVEL: "INFO"
+      ENABLE_ACCESS_LOGS: "true"
+    depends_on:
+      notification_postgres:
+        condition: service_healthy
+      notification_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  # Notification Service Instance 2
+  notification_service_2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: notification_service_2
+    ports:
+      - "8022:8000" # External 8022 -> Internal 8000
+    environment:
+      # Application
+      APP_NAME: "Notification Service"
+      APP_VERSION: "1.0.0"
+      DEBUG: "true"
+      ENVIRONMENT: "development"
+      SERVICE_NAME: "notification_service_2"
+
+      # Service URLs
+      NOTIFICATION_SERVICE_URL: "http://notification_service_2:8000"
+      NOTIFICATION_SERVICE_HEALTH: "http://notification_service_2:8000/health"
+
+      # Database
+      NOTIFICATION_DATABASE_URL: "postgresql+asyncpg://notification:password@notification_postgres:5432/notification"
+      POSTGRES_DB: "notification"
+      POSTGRES_USER: "notification"
+      POSTGRES_PASSWORD: "password"
+
+      # Security
+      SECRET_KEY: "notification_service_secret_key_2024_development_only"
+      ALGORITHM: "HS256"
+
+      # Redis
+      REDIS_URL: "redis://notification_redis:6379/4"
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      KAFKA_GROUP_ID: "notification-service-group"
+
+      # CORS
+      CORS_ORIGINS: '["*"]'
+      CORS_CREDENTIALS: "true"
+      CORS_METHODS: '["*"]'
+      CORS_HEADERS: '["*"]'
+
+      # Logging
+      LOG_LEVEL: "INFO"
+      ENABLE_ACCESS_LOGS: "true"
+    depends_on:
+      notification_postgres:
+        condition: service_healthy
+      notification_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  # Notification Service Instance 3
+  notification_service_3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: notification_service_3
+    ports:
+      - "8023:8000" # External 8023 -> Internal 8000
+    environment:
+      # Application
+      APP_NAME: "Notification Service"
+      APP_VERSION: "1.0.0"
+      DEBUG: "true"
+      ENVIRONMENT: "development"
+      SERVICE_NAME: "notification_service_3"
+
+      # Service URLs
+      NOTIFICATION_SERVICE_URL: "http://notification_service_3:8000"
+      NOTIFICATION_SERVICE_HEALTH: "http://notification_service_3:8000/health"
+
+      # Database
+      NOTIFICATION_DATABASE_URL: "postgresql+asyncpg://notification:password@notification_postgres:5432/notification"
+      POSTGRES_DB: "notification"
+      POSTGRES_USER: "notification"
+      POSTGRES_PASSWORD: "password"
+
+      # Security
+      SECRET_KEY: "notification_service_secret_key_2024_development_only"
+      ALGORITHM: "HS256"
+
+      # Redis
+      REDIS_URL: "redis://notification_redis:6379/4"
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      KAFKA_GROUP_ID: "notification-service-group"
+
+      # CORS
+      CORS_ORIGINS: '["*"]'
+      CORS_CREDENTIALS: "true"
+      CORS_METHODS: '["*"]'
+      CORS_HEADERS: '["*"]'
+
+      # Logging
+      LOG_LEVEL: "INFO"
+      ENABLE_ACCESS_LOGS: "true"
+    depends_on:
+      notification_postgres:
+        condition: service_healthy
+      notification_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+volumes:
+  notification_postgres_data:
+  notification_redis_data:
+
+networks:
+  ecommerce-network:
+    external: true

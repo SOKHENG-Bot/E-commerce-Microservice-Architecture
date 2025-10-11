@@ -1,0 +1,22 @@
+
+{
+  "version": "8.10.0",
+  "objects": [
+    {
+      "id": "ecommerce-overview",
+      "type": "dashboard",
+      "attributes": {
+        "title": "🏪 E-commerce Microservices Overview",
+        "description": "High-level view of all microservices performance and health",
+        "panelsJSON": "[{\"version\":\"8.10.0\",\"gridData\":{\"x\":0,\"y\":0,\"w\":24,\"h\":8},\"panelIndex\":\"1\",\"embeddableConfig\":{},\"panelRefName\":\"panel_1\"}]",
+        "timeRestore": true,
+        "timeTo": "now",
+        "timeFrom": "now-1h",
+        "refreshInterval": {
+          "pause": false,
+          "value": 10000
+        }
+      }
+    }
+  ]
+}

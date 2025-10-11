@@ -1,0 +1,14 @@
+
+{
+  "version": "8.10.0",
+  "objects": [
+    {
+      "id": "performance-monitoring",
+      "type": "dashboard",
+      "attributes": {
+        "title": "⚡ Performance Monitoring",
+        "description": "Service performance metrics and response times"
+      }
+    }
+  ]
+}

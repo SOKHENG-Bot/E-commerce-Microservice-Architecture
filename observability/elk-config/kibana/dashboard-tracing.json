@@ -1,0 +1,15 @@
+
+{
+  "version": "8.10.0",
+  "objects": [
+    {
+      "id": "correlation-tracing",
+      "type": "dashboard", 
+      "attributes": {
+        "title": "🔗 Correlation ID Request Tracing",
+        "description": "Follow requests across all microservices using correlation IDs",
+        "panelsJSON": "[{\"version\":\"8.10.0\",\"gridData\":{\"x\":0,\"y\":0,\"w\":48,\"h\":12}}]"
+      }
+    }
+  ]
+}

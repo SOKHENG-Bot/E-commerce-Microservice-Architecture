@@ -1,0 +1,43 @@
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scrape OpenTelemetry Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+
+  # Scrape microservices metrics (if they expose Prometheus endpoints)
+  - job_name: 'microservices'
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: 
+          - 'api_gateway:8000'
+          - 'user_service:8001'
+          - 'product_service:8002'
+          - 'order_service:8003'
+          - 'notification_service:8004'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__address__]
+        regex: '(.*):(.*)'
+        target_label: service
+        replacement: '${1}'
+
+  # Scrape Jaeger metrics
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger-all-in-one:14269']

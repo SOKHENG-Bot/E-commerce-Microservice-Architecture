@@ -1,0 +1,77 @@
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "http://*"
+            - "https://*"
+  
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'microservices'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['api_gateway:8000', 'user_service:8001', 'product_service:8002', 'order_service:8003', 'notification_service:8004']
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+  
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+  
+  # Add service tags and correlation ID processing
+  attributes:
+    actions:
+      - key: service.environment
+        value: production
+        action: insert
+      - key: service.cluster
+        value: ecommerce-microservices
+        action: insert
+
+exporters:
+  # Send traces to Jaeger
+  jaeger:
+    endpoint: jaeger-all-in-one:14250
+    tls:
+      insecure: true
+  
+  # Send metrics to Prometheus
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    
+  # Logging for debugging
+  logging:
+    loglevel: info
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  
+  pprof:
+    endpoint: 0.0.0.0:1777
+    
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, attributes]
+      exporters: [jaeger, logging]
+    
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, logging]

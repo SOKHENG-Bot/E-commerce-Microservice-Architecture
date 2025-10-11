@@ -1,0 +1,259 @@
+version: "3.8"
+
+services:
+  # Order Service Database
+  order_postgres:
+    image: postgres:15
+    container_name: order_postgres
+    environment:
+      POSTGRES_DB: order
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432" # Different port to avoid conflicts with main postgres
+    volumes:
+      - order_postgres_data:/var/lib/postgresql/data
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order -d order"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - order-network
+
+  # Redis for Order Service (Caching & Sessions)
+  order_redis:
+    image: redis:latest
+    container_name: order_redis
+    ports:
+      - "6381:6379" # Different port to avoid conflicts
+    command: redis-server --appendonly yes
+    volumes:
+      - order_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - order-network
+
+  # Kafka & Zookeeper for Order Service Events
+  order_zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: order_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2182:2181" # Different port to avoid conflicts
+    networks:
+      - order-network
+
+  order_kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: order_kafka
+    depends_on:
+      - order_zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: order_zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://order_kafka:9092,INTERNAL://order_kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "kafka-topics",
+          "--bootstrap-server",
+          "localhost:9092",
+          "--list",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "9093:9092" # Different port to avoid conflicts
+    networks:
+      - order-network
+
+  # Order Service Application
+  order_service:
+    build:
+      context: ../..
+      dockerfile: order_service/docker/Dockerfile
+    container_name: order_service_app
+    ports:
+      - "8003:8000"
+    environment:
+      # Application Settings
+      APP_NAME: Order Service
+      APP_VERSION: 1.0.0
+      DEBUG: "true"
+      ENVIRONMENT: development
+      LOG_LEVEL: INFO
+      SERVICE_NAME: order_service
+
+      # Service Configuration
+      ORDER_SERVICE_URL: http://localhost:8003
+      ORDER_SERVICE_HEALTH: http://localhost:8003/health
+
+      # PostgreSQL Database Configuration
+      ORDER_DATABASE_URL: postgresql+asyncpg://order:password@order_postgres:5432/order
+      DATABASE_POOL_SIZE: 10
+      DATABASE_MAX_OVERFLOW: 20
+
+      # PostgreSQL Connection Details
+      POSTGRES_DB: order_db
+      POSTGRES_USER: order_user
+      POSTGRES_PASSWORD: order_password
+      POSTGRES_HOST: order_postgres
+      POSTGRES_PORT: 5432
+
+      # Security & Authentication
+      SECRET_KEY: order_service_secret_key_2024_development_only
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
+
+      # Redis Configuration
+      REDIS_URL: redis://order_redis:6379/3
+      REDIS_HOST: order_redis
+      REDIS_PORT: 6379
+      REDIS_DB: 3
+
+      # Kafka Configuration
+      KAFKA_BOOTSTRAP_SERVERS: order_kafka:9092
+      KAFKA_GROUP_ID: order_service_group
+      KAFKA_TOPIC_ORDER_EVENTS: order.events
+      KAFKA_TOPIC_PAYMENT_EVENTS: payment.events
+      KAFKA_TOPIC_SHIPPING_EVENTS: shipping.events
+
+      # External Service URLs (Mock for standalone development)
+      USER_SERVICE_URL: http://localhost:8001
+      PRODUCT_SERVICE_URL: http://localhost:8002
+      NOTIFICATION_SERVICE_URL: http://localhost:8004
+
+      # Payment Configuration (Stripe)
+      USE_REAL_PAYMENTS: "false" # Set to true for real payments
+      STRIPE_PUBLISHABLE_KEY: ""
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+
+      # CORS Configuration
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:3001","http://127.0.0.1:3000","*"]'
+      CORS_CREDENTIALS: "true"
+      CORS_METHODS: '["GET","POST","PUT","DELETE","OPTIONS"]'
+      CORS_HEADERS: '["*"]'
+
+      # Logging Configuration
+      ENABLE_ACCESS_LOGS: "true"
+      ENABLE_REQUEST_LOGGING: "true"
+
+      # Rate Limiting
+      RATE_LIMIT_ENABLED: "false"
+      RATE_LIMIT_REQUESTS: 100
+      RATE_LIMIT_WINDOW: 60
+      RATE_LIMIT_PER_USER_REQUESTS: 20
+      RATE_LIMIT_PER_USER_WINDOW: 60
+
+      # Request/Response Settings
+      REQUEST_TIMEOUT: 30
+      RESPONSE_TIMEOUT: 30
+      MAX_REQUEST_SIZE: 10485760
+
+      # Circuit Breaker Configuration
+      CIRCUIT_BREAKER_ENABLED: "false"
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: 5
+      CIRCUIT_BREAKER_TIMEOUT: 60
+      CIRCUIT_BREAKER_RECOVERY_TIMEOUT: 300
+
+      # Caching Configuration
+      ENABLE_RESPONSE_CACHING: "false"
+      CACHE_TTL_DEFAULT: 300
+      CACHE_TTL_STATIC: 3600
+
+      # Order Service Specific Settings
+      ENABLE_ORDER_TRACKING: "true"
+      ENABLE_PAYMENT_PROCESSING: "true"
+      ENABLE_SHIPPING_INTEGRATION: "true"
+      ENABLE_ORDER_NOTIFICATIONS: "true"
+
+      # Performance & Monitoring
+      ENABLE_METRICS: "true"
+      METRICS_PORT: 8004
+      HEALTH_CHECK_INTERVAL: 30
+
+      # Development Settings
+      RELOAD_ON_CHANGE: "true"
+      HOT_RELOAD: "true"
+
+    env_file:
+      - ../.env
+    volumes:
+      - ../app:/app/app:ro
+      - /app/__pycache__
+    depends_on:
+      order_postgres:
+        condition: service_healthy
+      order_redis:
+        condition: service_healthy
+      order_kafka:
+        condition: service_healthy
+    networks:
+      - order-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Kafka UI for monitoring (optional)
+  order_kafka_ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: order_kafka_ui
+    ports:
+      - "8081:8080" # Different port to avoid conflicts
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "order-service-local"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "order_kafka:9093"
+      KAFKA_CLUSTERS_0_ZOOKEEPER: "order_zookeeper:2181"
+    depends_on:
+      - order_kafka
+    networks:
+      - order-network
+    profiles:
+      - monitoring
+
+  # pgAdmin for database management (optional)
+  order_pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: order_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@order.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5051:80" # Different port to avoid conflicts
+    depends_on:
+      - order_postgres
+    networks:
+      - order-network
+    profiles:
+      - monitoring
+
+volumes:
+  order_postgres_data:
+  order_redis_data:
+
+networks:
+  order-network:
+    driver: bridge

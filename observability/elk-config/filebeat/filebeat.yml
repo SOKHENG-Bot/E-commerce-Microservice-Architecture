@@ -1,0 +1,43 @@
+
+filebeat.inputs:
+- type: container
+  paths:
+    - '/var/lib/docker/containers/*/*.log'
+  processors:
+    - add_docker_metadata:
+        host: "unix:///var/run/docker.sock"
+    - decode_json_fields:
+        fields: ["message"]
+        target: ""
+        overwrite_keys: true
+
+# Add service labels from container metadata  
+processors:
+  - add_fields:
+      target: fields
+      fields:
+        environment: production
+        cluster: ecommerce-microservices
+
+# Define service-specific inputs
+- type: log
+  paths:
+    - /app/logs/*.log
+  fields:
+    service: microservice
+    log_type: application
+  fields_under_root: true
+  multiline.pattern: '^\d{4}-\d{2}-\d{2}'
+  multiline.negate: true
+  multiline.match: after
+
+output.logstash:
+  hosts: ["logstash:5044"]
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
