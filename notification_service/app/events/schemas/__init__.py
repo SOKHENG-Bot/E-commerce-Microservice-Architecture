@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel
 
@@ -12,10 +12,10 @@ class NotificationSentEventData(BaseModel):
     recipient: str
     subject: Optional[str] = None
     content: str
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict[str, Any]] = None
 
-    def to_dict(self) -> Dict:
-        return self.dict()
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
 
 
 class NotificationDeliveredEventData(BaseModel):
@@ -27,10 +27,10 @@ class NotificationDeliveredEventData(BaseModel):
     recipient: str
     delivered_at: str
     delivery_provider: Optional[str] = None
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict[str, Any]] = None
 
-    def to_dict(self) -> Dict:
-        return self.dict()
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
 
 
 class NotificationFailedEventData(BaseModel):
@@ -43,10 +43,10 @@ class NotificationFailedEventData(BaseModel):
     error_message: str
     error_code: Optional[str] = None
     retry_count: int = 0
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict[str, Any]] = None
 
-    def to_dict(self) -> Dict:
-        return self.dict()
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
 
 
 class NotificationRequestedEventData(BaseModel):
@@ -59,10 +59,10 @@ class NotificationRequestedEventData(BaseModel):
     content: str
     priority: str = "normal"  # low, normal, high, urgent
     template_id: Optional[str] = None
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict[str, Any]] = None
 
-    def to_dict(self) -> Dict:
-        return self.dict()
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
 
 
 class EmailSentEventData(BaseModel):
@@ -76,10 +76,10 @@ class EmailSentEventData(BaseModel):
     cc: Optional[list[str]] = None
     bcc: Optional[list[str]] = None
     attachments: Optional[list[str]] = None
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict[str, Any]] = None
 
-    def to_dict(self) -> Dict:
-        return self.dict()
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
 
 
 class SMSSentEventData(BaseModel):
@@ -91,10 +91,10 @@ class SMSSentEventData(BaseModel):
     content: str
     provider: str
     message_id: Optional[str] = None
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict[str, Any]] = None
 
-    def to_dict(self) -> Dict:
-        return self.dict()
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
 
 
 class PushNotificationSentEventData(BaseModel):
@@ -105,10 +105,52 @@ class PushNotificationSentEventData(BaseModel):
     device_token: str
     title: str
     body: str
-    data: Optional[Dict] = None
+    data: Optional[Dict[str, Any]] = None
     badge: Optional[int] = None
     sound: Optional[str] = None
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict[str, Any]] = None
 
-    def to_dict(self) -> Dict:
-        return self.dict()
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
+
+
+class EmailClickedEventData(BaseModel):
+    """Event data for email clicked events"""
+
+    notification_id: str
+    user_id: str
+    link_url: str
+    clicked_at: str
+    user_agent: Optional[str] = None
+    ip_address: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
+
+
+class NotificationPreferencesUpdatedEventData(BaseModel):
+    """Event data for notification preferences updated events"""
+
+    user_id: str
+    preferences: Dict[str, bool]
+    updated_at: str
+    updated_by: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
+
+
+class UserUnsubscribedEventData(BaseModel):
+    """Event data for user unsubscribed events"""
+
+    user_id: str
+    notification_type: str
+    channel: str
+    unsubscribed_at: str
+    reason: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()

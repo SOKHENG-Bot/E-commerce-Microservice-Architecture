@@ -10,11 +10,14 @@ from ..utils.logging import setup_notification_logging as setup_logging
 from .base import BaseEvent
 from .base.kafka_client import KafkaEventPublisher
 from .schemas import (
+    EmailClickedEventData,
     EmailSentEventData,
     NotificationFailedEventData,
+    NotificationPreferencesUpdatedEventData,
     NotificationSentEventData,
     PushNotificationSentEventData,
     SMSSentEventData,
+    UserUnsubscribedEventData,
 )
 
 settings = get_settings()
@@ -185,20 +188,23 @@ class NotificationEventProducer:
     ) -> None:
         """Publish email clicked event"""
         try:
-            # Create event data
-            event_data: Dict[str, Any] = {
-                "user_id": user_id,
-                "notification_id": notification_id,
-                "link_url": link_url,
-                "clicked_at": datetime.now(timezone.utc).isoformat(),
-            }
+            # Create event data using schema
+            event_data = EmailClickedEventData(
+                notification_id=notification_id,
+                user_id=str(user_id),
+                link_url=link_url,
+                clicked_at=datetime.now(timezone.utc).isoformat(),
+                metadata={
+                    "clicked_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
 
             # Create BaseEvent
             event = BaseEvent(
                 event_type="email.clicked",
                 source_service="notification-service",
                 correlation_id=correlation_id,
-                data=event_data,
+                data=event_data.to_dict(),
             )
 
             await self.event_publisher.publish(event, topic="notification.events")
@@ -320,19 +326,22 @@ class NotificationEventProducer:
     ) -> None:
         """Publish notification preferences updated event"""
         try:
-            # Create event data
-            event_data: Dict[str, Any] = {
-                "user_id": user_id,
-                "preferences": preferences,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
+            # Create event data using schema
+            event_data = NotificationPreferencesUpdatedEventData(
+                user_id=str(user_id),
+                preferences=preferences,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+                metadata={
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
 
             # Create BaseEvent
             event = BaseEvent(
                 event_type="notification.preferences_updated",
                 source_service="notification-service",
                 correlation_id=correlation_id,
-                data=event_data,
+                data=event_data.to_dict(),
             )
 
             await self.event_publisher.publish(event, topic="notification.events")
@@ -358,20 +367,23 @@ class NotificationEventProducer:
     ) -> None:
         """Publish user unsubscribed event"""
         try:
-            # Create event data
-            event_data: Dict[str, Any] = {
-                "user_id": user_id,
-                "notification_type": notification_type,
-                "channel": channel,
-                "unsubscribed_at": datetime.now(timezone.utc).isoformat(),
-            }
+            # Create event data using schema
+            event_data = UserUnsubscribedEventData(
+                user_id=str(user_id),
+                notification_type=notification_type,
+                channel=channel,
+                unsubscribed_at=datetime.now(timezone.utc).isoformat(),
+                metadata={
+                    "unsubscribed_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
 
             # Create BaseEvent
             event = BaseEvent(
                 event_type="notification.unsubscribed",
                 source_service="notification-service",
                 correlation_id=correlation_id,
-                data=event_data,
+                data=event_data.to_dict(),
             )
 
             await self.event_publisher.publish(event, topic="notification.events")

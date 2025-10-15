@@ -45,7 +45,7 @@ async def init_events() -> None:
         # Initialize notification event producer
         _notification_event_producer = NotificationEventProducer(_kafka_publisher)
 
-        logger.info("✅ Event publishing infrastructure initialized successfully")
+        logger.info("Event publishing infrastructure initialized successfully")
 
     except Exception as e:
         logger.warning(f"Event publishing initialization failed: {e}")

@@ -1,34 +1,37 @@
 import asyncio
 import logging
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional
 
-import aiosmtplib
 from jinja2 import DictLoader, Environment
+from sendgrid import SendGridAPIClient  # type: ignore
+from sendgrid.helpers.mail import Content, Email, Mail, To  # type: ignore
 
 from ..core.settings import get_settings
-from ..middleware.logging_middleware import create_enhanced_logger
 
-logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
 class EmailProvider:
     def __init__(self):
-        self.smtp_host = settings.SMTP_HOST
-        self.smtp_port = int(settings.SMTP_PORT) if settings.SMTP_PORT else 587
-        self.smtp_username = settings.SMTP_USERNAME
-        self.smtp_password = settings.SMTP_PASSWORD
-        self.smtp_use_tls = settings.SMTP_USE_TLS
-        self.from_email = settings.FROM_EMAIL
-        self.from_name = settings.FROM_NAME
+        self.from_email: str = settings.FROM_EMAIL or ""
+        self.from_name: str = settings.FROM_NAME or ""
+
+        # SendGrid configuration
+        self.sendgrid_api_key: str = settings.SENDGRID_API_KEY or ""
+
+        # Validate required settings
+        if not self.from_email:
+            raise ValueError("FROM_EMAIL setting is required")
+        if not self.sendgrid_api_key:
+            raise ValueError("SENDGRID_API_KEY setting is required")
 
         # Initialize Jinja2 for templating
-        self.template_env = Environment(loader=DictLoader({}))
+        self.template_env: Environment = Environment(loader=DictLoader({}))
 
         # Initialize enhanced logger for detailed provider logging
-        self.logger = create_enhanced_logger("notification_service_email_provider")
+        self.logger: logging.Logger = logging.getLogger(
+            "notification_service_email_provider"
+        )
 
     async def send_email(
         self,
@@ -39,7 +42,7 @@ class EmailProvider:
         is_html: bool = False,
     ) -> Dict[str, Any]:
         """
-        Send an email using SMTP
+        Send an email using SendGrid
 
         Args:
             to_email: Recipient email address
@@ -59,39 +62,25 @@ class EmailProvider:
             else:
                 rendered_content = content
 
-            # Create message
-            message = MIMEMultipart("alternative")
-            message["Subject"] = subject
-            message["From"] = f"{self.from_name} <{self.from_email}>"
-            message["To"] = to_email
-
-            # Add content
-            if is_html:
-                part = MIMEText(rendered_content, "html")
-            else:
-                part = MIMEText(rendered_content, "plain")
-
-            message.attach(part)
-
-            # Send email
-            await self._send_smtp_email(message, to_email)
-
-            return {
-                "success": True,
-                "message_id": None,  # SMTP doesn't always return message ID
-                "provider": "smtp",
-                "recipient": to_email,
-            }
+            # Send email via SendGrid
+            return await self._send_sendgrid_email(
+                to_email, subject, rendered_content, is_html
+            )
 
         except Exception as e:
+            correlation_id = None
+            try:
+                task = asyncio.current_task()
+                correlation_id = getattr(task, "correlation_id", None)
+            except (AttributeError, RuntimeError):
+                pass
+
             self.logger.error(
                 "Failed to send email",
                 extra={
-                    "correlation_id": getattr(
-                        asyncio.current_task(), "correlation_id", None
-                    ),
+                    "correlation_id": correlation_id,
                     "recipient": to_email,
-                    "provider": "smtp",
+                    "provider": "sendgrid",
                     "error_type": type(e).__name__,
                     "error_message": str(e),
                     "event_type": "email_send_failed",
@@ -100,79 +89,71 @@ class EmailProvider:
             return {
                 "success": False,
                 "error": str(e),
-                "provider": "smtp",
+                "provider": "sendgrid",
                 "recipient": to_email,
             }
 
-    async def _send_smtp_email(self, message: MIMEMultipart, to_email: str):
-        """Send email via SMTP"""
+    async def _send_sendgrid_email(
+        self, to_email: str, subject: str, content: str, is_html: bool = False
+    ) -> Dict[str, Any]:
+        """Send email via SendGrid"""
         try:
-            if self.smtp_use_tls:
-                # Use TLS (implicit SSL)
-                if self.smtp_username and self.smtp_password:
-                    await aiosmtplib.send(
-                        message,
-                        hostname=self.smtp_host,
-                        port=self.smtp_port,
-                        username=self.smtp_username,
-                        password=self.smtp_password,
-                        use_tls=True,
-                    )
-                else:
-                    await aiosmtplib.send(
-                        message,
-                        hostname=self.smtp_host,
-                        port=self.smtp_port,
-                        use_tls=True,
-                    )
-            else:
-                # No TLS/SSL - plain SMTP (for MailHog and local testing)
-                if self.smtp_username and self.smtp_password:
-                    await aiosmtplib.send(
-                        message,
-                        hostname=self.smtp_host,
-                        port=self.smtp_port,
-                        username=self.smtp_username,
-                        password=self.smtp_password,
-                        use_tls=False,
-                        start_tls=False,
-                    )
-                else:
-                    await aiosmtplib.send(
-                        message,
-                        hostname=self.smtp_host,
-                        port=self.smtp_port,
-                        use_tls=False,
-                        start_tls=False,
-                    )
+            sg = SendGridAPIClient(api_key=self.sendgrid_api_key)  # type: ignore
 
-        except aiosmtplib.SMTPException as e:
-            self.logger.error(
-                "SMTP error sending email",
-                extra={
-                    "correlation_id": getattr(
-                        asyncio.current_task(), "correlation_id", None
-                    ),
-                    "recipient": to_email,
-                    "provider": "smtp",
-                    "error_type": "SMTPException",
-                    "error_message": str(e),
-                    "event_type": "smtp_error",
-                },
-            )
-            raise
+            from_email_obj = Email(self.from_email, self.from_name)  # type: ignore
+            to_email_obj = To(to_email)  # type: ignore
+
+            mail_obj = Mail(from_email_obj, to_email_obj, subject)  # type: ignore
+
+            if is_html:
+                # Send both HTML and plain text versions for better compatibility
+                # Extract plain text from HTML by removing tags (simple approach)
+                import re
+
+                plain_text = re.sub(r"<[^>]+>", "", content)  # Remove HTML tags
+                plain_text = re.sub(
+                    r"\s+", " ", plain_text
+                ).strip()  # Clean up whitespace
+
+                # Add plain text content
+                plain_content_obj = Content("text/plain", plain_text)  # type: ignore
+                mail_obj.add_content(plain_content_obj)  # type: ignore
+
+                # Add HTML content
+                html_content_obj = Content("text/html", content)  # type: ignore
+                mail_obj.add_content(html_content_obj)  # type: ignore
+            else:
+                # Plain text only
+                content_obj = Content("text/plain", content)  # type: ignore
+                mail_obj.add_content(content_obj)  # type: ignore
+
+            response = sg.send(mail_obj)  # type: ignore
+
+            return {
+                "success": True,
+                "message_id": response.headers.get("X-Message-Id"),  # type: ignore
+                "provider": "sendgrid",
+                "recipient": to_email,
+                "status_code": response.status_code,  # type: ignore
+            }
+
         except Exception as e:
+            correlation_id = None
+            try:
+                task = asyncio.current_task()
+                correlation_id = getattr(task, "correlation_id", None)
+            except (AttributeError, RuntimeError):
+                pass
+
             self.logger.error(
-                "Unexpected error sending email",
+                "SendGrid error sending email",
                 extra={
-                    "correlation_id": getattr(
-                        asyncio.current_task(), "correlation_id", None
-                    ),
+                    "correlation_id": correlation_id,
                     "recipient": to_email,
-                    "provider": "smtp",
+                    "provider": "sendgrid",
                     "error_type": type(e).__name__,
                     "error_message": str(e),
-                    "event_type": "email_send_unexpected_error",
+                    "event_type": "sendgrid_error",
                 },
             )
             raise
@@ -223,14 +204,19 @@ class EmailProvider:
                 if isinstance(result, Exception):
                     total_failed += 1
                     failed_recipients.append(email)
+                    correlation_id = None
+                    try:
+                        task = asyncio.current_task()
+                        correlation_id = getattr(task, "correlation_id", None)
+                    except (AttributeError, RuntimeError):
+                        pass
+
                     self.logger.error(
                         "Failed to send email in bulk operation",
                         extra={
-                            "correlation_id": getattr(
-                                asyncio.current_task(), "correlation_id", None
-                            ),
+                            "correlation_id": correlation_id,
                             "recipient": email,
-                            "provider": "smtp",
+                            "provider": "sendgrid",
                             "error_type": type(result).__name__,
                             "error_message": str(result),
                             "event_type": "bulk_email_send_failed",
@@ -278,39 +264,50 @@ class EmailProvider:
 
     async def test_connection(self) -> Dict[str, Any]:
         """
-        Test SMTP connection
+        Test SendGrid connection
+
+        Returns:
+            Dict with connection test result
+        """
+        return await self._test_sendgrid_connection()
+
+    async def _test_sendgrid_connection(self) -> Dict[str, Any]:
+        """
+        Test SendGrid connection
 
         Returns:
             Dict with connection test result
         """
         try:
-            if self.smtp_use_tls:
-                server = aiosmtplib.SMTP(
-                    hostname=self.smtp_host, port=self.smtp_port, use_tls=True
-                )
+            sg = SendGridAPIClient(api_key=self.sendgrid_api_key)  # type: ignore
+
+            # Test API key by making a simple request
+            response = sg.client.api_keys.get()  # type: ignore
+
+            if response.status_code == 200:  # type: ignore
+                return {"success": True, "message": "SendGrid connection successful"}
             else:
-                server = aiosmtplib.SMTP(hostname=self.smtp_host, port=self.smtp_port)
-
-            await server.connect()
-
-            if self.smtp_username and self.smtp_password:
-                await server.login(self.smtp_username, self.smtp_password)
-
-            await server.quit()
-
-            return {"success": True, "message": "SMTP connection successful"}
+                return {
+                    "success": False,
+                    "error": f"SendGrid API returned status {response.status_code}",  # type: ignore
+                }
 
         except Exception as e:
+            correlation_id = None
+            try:
+                task = asyncio.current_task()
+                correlation_id = getattr(task, "correlation_id", None)
+            except (AttributeError, RuntimeError):
+                pass
+
             self.logger.error(
-                "SMTP connection test failed",
+                "SendGrid connection test failed",
                 extra={
-                    "correlation_id": getattr(
-                        asyncio.current_task(), "correlation_id", None
-                    ),
-                    "provider": "smtp",
+                    "correlation_id": correlation_id,
+                    "provider": "sendgrid",
                     "error_type": type(e).__name__,
                     "error_message": str(e),
-                    "event_type": "smtp_connection_test_failed",
+                    "event_type": "sendgrid_connection_test_failed",
                 },
             )
             return {"success": False, "error": str(e)}

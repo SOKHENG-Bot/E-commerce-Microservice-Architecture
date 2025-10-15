@@ -1,12 +1,12 @@
 import json
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.deps import DatabaseDep
 from ...repository.template_repository import TemplateRepository
-from ...schemas.template import TemplateResponse, TemplateUpdate
+from ...schemas.template import TemplateCreate, TemplateResponse, TemplateUpdate
 from ...utils.logging import setup_notification_logging
 
 logger = setup_notification_logging("templates_api")
@@ -104,7 +104,7 @@ async def delete_template(
 async def upload_html_template(
     file: UploadFile = File(...),
     name: Optional[str] = None,
-    type: str = "email",
+    template_type: str = "email",
     subject: Optional[str] = None,
     variables: Optional[str] = None,  # JSON string of variables
     correlation_id: Optional[str] = None,
@@ -149,7 +149,7 @@ async def upload_html_template(
         )
 
     # Parse variables if provided
-    template_variables = {}
+    template_variables: dict[str, Any] = {}
     if variables:
         try:
             template_variables = json.loads(variables)
@@ -159,18 +159,18 @@ async def upload_html_template(
                 detail="Invalid variables JSON format",
             )
 
-    # Create template data
-    template_data = {
-        "name": name,
-        "type": type,
-        "content_type": "text/html",
-        "subject": subject,
-        "body": html_content,
-        "variables": template_variables,
-        "is_active": True,
-    }
+    # Create template using schema
+    template_create = TemplateCreate(
+        name=name,
+        type=template_type,
+        content_type="text/html",
+        subject=subject,
+        body=html_content,
+        variables=template_variables,
+        is_active=True,
+    )
 
-    template = await repo.create(template_data)
+    template = await repo.create(template_create.model_dump())
 
     logger.info(
         "HTML template uploaded successfully",

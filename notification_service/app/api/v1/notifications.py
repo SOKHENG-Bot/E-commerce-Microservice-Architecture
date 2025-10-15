@@ -37,11 +37,7 @@ async def send_notification(
             },
         )
 
-        # Create notification record first
-        repository = NotificationRepository(notification_service.session)
-        notification = await repository.create_notification(notification_data, user_id)
-
-        # Send notification using NotificationService
+        # Send notification using NotificationService (which now handles database persistence)
         notification_success = False
         result = {}
 
@@ -50,46 +46,41 @@ async def send_notification(
             if notification_data.type.value == "email":
                 result = await notification_service.send_email_notification(
                     user_id=user_id,
-                    notification_type="custom",
+                    template_name="custom",  # Use a generic template name
                     template_data=notification_data.template_data or {},
                     correlation_id=int(correlation_id) if correlation_id else None,
                     recipient_email=notification_data.recipient,
+                    content=notification_data.content,
+                    subject=notification_data.subject,
                 )
-                notification_success = result.get("status") == "sent"
+                notification_success = result.get("status") == "delivered"
 
             elif notification_data.type.value == "sms":
                 result = await notification_service.send_sms_notification(
                     user_id=user_id,
-                    phone_number=notification_data.recipient,
-                    message=notification_data.content,
+                    template_name="custom",  # Use a generic template name
+                    template_data=notification_data.template_data or {},
                     correlation_id=int(correlation_id) if correlation_id else None,
+                    phone_number=notification_data.recipient,
                 )
                 notification_success = result.get("status") == "delivered"
 
             elif notification_data.type.value == "push":
                 result = await notification_service.send_push_notification(
                     user_id=user_id,
-                    device_token=notification_data.recipient,
-                    title=notification_data.subject or "Notification",
-                    message=notification_data.content,
+                    template_name="custom",  # Use a generic template name
+                    template_data=notification_data.template_data or {},
                     correlation_id=int(correlation_id) if correlation_id else None,
+                    device_token=notification_data.recipient,
                 )
                 notification_success = result.get("status") == "delivered"
 
-            # Update notification status
-            if notification_success:
-                await repository.mark_as_sent(notification.id, result)
-
-            else:
-                await repository.mark_as_failed(
-                    notification.id, result.get("error", "Unknown error")
-                )
-
         except Exception as e:
-            await repository.mark_as_failed(notification.id, str(e))
+            logger.error(f"Notification service error: {e}")
+            notification_success = False
 
         response_data: Dict[str, Any] = {
-            "notification_id": notification.id,
+            "notification_id": result.get("notification_id", "unknown"),
             "status": "sent" if notification_success else "failed",
             "message": "Notification sent successfully"
             if notification_success
@@ -97,10 +88,10 @@ async def send_notification(
         }
 
         logger.info(
-            "Notification sent successfully",
+            "Notification API call completed",
             extra={
                 "correlation_id": correlation_id,
-                "notification_id": str(notification.id),
+                "notification_id": result.get("notification_id", "unknown"),
                 "status": "sent" if notification_success else "failed",
             },
         )

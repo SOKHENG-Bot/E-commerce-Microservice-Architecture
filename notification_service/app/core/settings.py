@@ -47,13 +47,11 @@ class NotificationServiceSettings(BaseSettings):
     KAFKA_TOPIC_SMS_EVENTS: Optional[str] = None
 
     # Email Configuration
-    SMTP_HOST: Optional[str] = None
-    SMTP_PORT: Optional[str] = None  # Changed to str to handle empty strings
-    SMTP_USERNAME: Optional[str] = None
-    SMTP_PASSWORD: Optional[str] = None
-    SMTP_USE_TLS: bool = True
     FROM_EMAIL: Optional[str] = None
     FROM_NAME: str = "E-Commerce Platform"
+
+    # SendGrid Configuration
+    SENDGRID_API_KEY: Optional[str] = None
 
     # SMS Configuration (Twilio)
     TWILIO_ACCOUNT_SID: Optional[str] = None
@@ -77,6 +75,11 @@ class NotificationServiceSettings(BaseSettings):
     # Logging
     LOG_LEVEL: str
     ENABLE_ACCESS_LOGS: bool
+
+    # Notification Service Specific Settings
+    ENABLE_EMAIL_NOTIFICATIONS: bool = True
+    ENABLE_SMS_NOTIFICATIONS: bool = True
+    ENABLE_PUSH_NOTIFICATIONS: bool = False
 
     class Config:
         env_file = ENV_FILE  # Path to root .env file

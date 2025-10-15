@@ -46,6 +46,19 @@ class UserUpdatedEventData(BaseModel):
         return self.model_dump()
 
 
+class UserEmailVerificationRequestedEventData(BaseModel):
+    """Data schema for email verification request events"""
+
+    user_id: int
+    email: str
+    verification_token: str
+    expires_in_minutes: int
+    requested_at: datetime
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.model_dump()
+
+
 class UserEmailVerifiedEventData(BaseModel):
     """Data schema for email verification events"""
 
@@ -56,8 +69,6 @@ class UserEmailVerifiedEventData(BaseModel):
     def to_dict(self) -> Dict[str, Any]:
         return self.model_dump()
 
-
-class UserDeletedEventData(BaseModel):
     """Data schema for user deletion events"""
 
     user_id: int
@@ -104,6 +115,7 @@ class ProfileUpdatedEventData(BaseModel):
 USER_CREATED = "user.created"
 USER_UPDATED = "user.updated"
 USER_DELETED = "user.deleted"
+USER_EMAIL_VERIFICATION_REQUESTED = "user.email_verification_requested"
 USER_EMAIL_VERIFIED = "user.email_verified"
 PROFILE_CREATED = "profile.created"
 PROFILE_UPDATED = "profile.updated"

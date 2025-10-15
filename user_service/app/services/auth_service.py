@@ -13,7 +13,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from user_service.app.models.address import Address, AddressTypeEnum
+from user_service.app.models.address import Address
 from user_service.app.models.profile import Profile
 from user_service.app.models.user import Permission, Role, User
 from user_service.app.repository.address_repository import AddressRepository
@@ -130,7 +130,7 @@ class AuthService:
             # Create default billing address
             address = Address(
                 user_id=user.id,
-                type=AddressTypeEnum.BILLING,
+                type="billing",
                 is_default=True,
             )
 
@@ -159,7 +159,75 @@ class AuthService:
                     logger.warning(f"Failed to publish user created event: {e}")
                     # Don't fail registration if event publishing fails
             logger.info(
-                "User registered successfully.",
+                "User created event published, now checking email verification",
+                extra={
+                    "user_id": str(new_user.id),
+                    "email": new_user.email,
+                },
+            )
+
+            # Publish email verification request event
+            logger.info(
+                "Checking event publisher availability",
+                extra={
+                    "user_id": str(new_user.id),
+                    "email": new_user.email,
+                    "event_publisher_exists": self.event_publisher is not None,
+                },
+            )
+
+            # Publish email verification request event
+            logger.info(
+                "Checking event publisher availability",
+                extra={
+                    "user_id": str(new_user.id),
+                    "email": new_user.email,
+                    "event_publisher_exists": self.event_publisher is not None,
+                },
+            )
+            if self.event_publisher:
+                try:
+                    logger.info(
+                        "Attempting to publish email verification request event",
+                        extra={
+                            "user_id": str(new_user.id),
+                            "email": new_user.email,
+                        },
+                    )
+                    await self.event_publisher.publish_email_verification_request(
+                        user=new_user,
+                        verification_token=verify_token,
+                        expires_in_minutes=5,
+                    )
+                    logger.info(
+                        "Successfully published email verification request event",
+                        extra={
+                            "user_id": str(new_user.id),
+                            "email": new_user.email,
+                        },
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to publish email verification request event: {e}",
+                        extra={
+                            "user_id": str(new_user.id),
+                            "email": new_user.email,
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                        },
+                    )
+                    # Don't fail registration if event publishing fails
+            else:
+                logger.warning(
+                    "Event publisher is None - email verification event not published",
+                    extra={
+                        "user_id": str(new_user.id),
+                        "email": new_user.email,
+                    },
+                )
+
+            logger.info(
+                "About to return from register_user function",
                 extra={
                     "user_id": str(new_user.id),
                     "email": new_user.email,
@@ -183,22 +251,34 @@ class AuthService:
     async def verify_email_token(self, token: str) -> bool:
         """Verify user email with token"""
         try:
+            logger.info(f"Starting email verification for token: {token[:20]}...")
             # Decode and validate the token
             payload = jwt_handler.decode_token(token)
+            logger.info(
+                f"Token decoded successfully: user_id={payload.user_id}, email={payload.email}"
+            )
             email = payload.email
             if not email:
+                logger.error("Token missing email field")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid token.",
                 )
             # Query user by email, mark as verified, and update record to database
             user = await self.user_repository.query_email(email)
+            logger.info(
+                f"Found user: {user.id if user else None}, email matches: {user.email == email if user else False}"
+            )
             if not user or user.email != email:
+                logger.error(
+                    f"User not found or email mismatch: requested={email}, found={user.email if user else None}"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found.",
                 )
             if user.is_verified:
+                logger.info("User already verified")
                 return True
             user.is_verified = True
             await self.user_repository.update(user)
@@ -215,7 +295,7 @@ class AuthService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error during email verification: {e}")
+            logger.error(f"Error during email verification: {e}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Email verification failed.",

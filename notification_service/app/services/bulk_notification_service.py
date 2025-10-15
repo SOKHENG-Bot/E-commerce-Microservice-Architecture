@@ -4,7 +4,7 @@ Bulk notification service for mass notification sending with segmentation and ba
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from uuid import uuid4
 
 from sqlalchemy import text
@@ -311,7 +311,9 @@ class BulkNotificationService:
                         }
                     )
                 else:
-                    results.append(result)
+                    # At this point, result is guaranteed to be Dict[str, Any]
+                    batch_result = cast(Dict[str, Any], result)
+                    results.append(batch_result)
 
             return results
 
@@ -327,36 +329,43 @@ class BulkNotificationService:
                 text("SELECT * FROM notifications WHERE id = :id"),
                 {"id": notification_id},
             )
-            notification = result.fetchone()
+            notification_row = result.fetchone()
 
-            if not notification:
+            if not notification_row:
                 raise ValueError(f"Notification {notification_id} not found")
 
+            # Convert row to dict for easier access
+            notification = dict(notification_row)
+
             # Send based on channel
-            if notification.channel == "email":
+            if notification["channel"] == "email":
                 await self.notification_service.send_email_notification(
-                    user_id=notification.user_id,
-                    notification_type=notification.type,
-                    template_data=notification.template_data,
-                    correlation_id=str(notification_id),
+                    user_id=notification["user_id"],
+                    template_name=notification["template_id"] or "bulk_email",
+                    template_data=notification["template_data"] or {},
+                    correlation_id=notification_id,
+                    recipient_email=notification["recipient"],
+                    content=notification["content"],
+                    subject=notification["subject"],
                 )
-            elif notification.channel == "sms":
+            elif notification["channel"] == "sms":
                 await self.notification_service.send_sms_notification(
-                    user_id=notification.user_id,
-                    phone_number=notification.recipient,
-                    message=notification.content,
-                    correlation_id=str(notification_id),
+                    user_id=notification["user_id"],
+                    template_name=notification["template_id"] or "bulk_sms",
+                    template_data=notification["template_data"] or {},
+                    correlation_id=notification_id,
+                    phone_number=notification["recipient"],
                 )
-            elif notification.channel == "push":
+            elif notification["channel"] == "push":
                 await self.notification_service.send_push_notification(
-                    user_id=notification.user_id,
-                    device_token=notification.recipient,
-                    title=notification.subject or "Notification",
-                    message=notification.content,
-                    correlation_id=str(notification_id),
+                    user_id=notification["user_id"],
+                    template_name=notification["template_id"] or "bulk_push",
+                    template_data=notification["template_data"] or {},
+                    correlation_id=notification_id,
+                    device_token=notification["recipient"],
                 )
             else:
-                raise ValueError(f"Unsupported channel: {notification.channel}")
+                raise ValueError(f"Unsupported channel: {notification['channel']}")
 
             # Update notification status
             await self.session.execute(

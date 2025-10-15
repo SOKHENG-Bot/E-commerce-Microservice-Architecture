@@ -1,11 +1,3 @@
-"""
-User Service Event Schemas
-These schemas define the structure of events published by the user service.
-Other services consume these events to maintain data consistency.
-
-Note: These work with local events.base.BaseEvent which expects data as Dict[str, Any]
-"""
-
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -51,6 +43,20 @@ class UserDeletedEventData(BaseModel):
     email: str
     username: str
     deleted_at: datetime
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for BaseEvent compatibility"""
+        return self.model_dump()
+
+
+class UserEmailVerificationRequestedEventData(BaseModel):
+    """Data for email verification request events"""
+
+    user_id: int
+    email: str
+    verification_token: str
+    expires_in_minutes: int
+    requested_at: datetime
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for BaseEvent compatibility"""
@@ -103,6 +109,7 @@ class ProfileUpdatedEventData(BaseModel):
 USER_CREATED = "user.created"
 USER_UPDATED = "user.updated"
 USER_DELETED = "user.deleted"
+USER_EMAIL_VERIFICATION_REQUESTED = "user.email_verification_requested"
 USER_EMAIL_VERIFIED = "user.email_verified"
 PROFILE_CREATED = "profile.created"
 PROFILE_UPDATED = "profile.updated"

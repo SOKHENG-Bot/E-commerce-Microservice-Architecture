@@ -18,10 +18,10 @@ class Address(UserServiceBaseModel):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=False
     )
-    type: Mapped[AddressTypeEnum] = mapped_column(
-        SQLEnum(AddressTypeEnum, name="address_type_enum"),
+    type: Mapped[str] = mapped_column(
+        SQLEnum("billing", "shipping", name="address_type_enum"),
         nullable=False,
-        default=AddressTypeEnum.BILLING,
+        default="billing",
     )
 
     street_address: Mapped[str] = mapped_column(String(255), nullable=False, default="")

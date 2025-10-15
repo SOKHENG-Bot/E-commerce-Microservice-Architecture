@@ -1,6 +1,6 @@
 """Authentication API endpoints"""
 
-from typing import Dict, Optional
+from typing import Optional
 
 from fastapi import APIRouter, status
 from fastapi.requests import Request
@@ -16,6 +16,7 @@ from user_service.app.api.dependencies import (
 from user_service.app.models.user import User
 from user_service.app.schemas.user import (
     LoginRequest,
+    MessageResponse,
     PasswordChangeRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
@@ -23,6 +24,7 @@ from user_service.app.schemas.user import (
     TokenResponse,
     UserCreate,
     UserLoginResponse,
+    VerificationResponse,
 )
 from user_service.app.services.auth_service import AuthService
 from user_service.app.utils.logging import setup_user_logging
@@ -31,23 +33,27 @@ logger = setup_user_logging("auth_api")
 router = APIRouter(prefix="/auth")
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=MessageResponse, status_code=status.HTTP_201_CREATED
+)
 async def register(
     request: Request,
     data: UserCreate,
     service: AuthService = AuthServiceDep,
     correlation_id: Optional[str] = CorrelationIdDep,
     db: AsyncSession = DatabaseDep,
-) -> Dict[str, str]:
+) -> MessageResponse:
     """Register a new user account"""
     try:
-        result = await service.register_user(data)
+        await service.register_user(data)
 
         logger.info(
             f"User registered successfully: {data.email}",
             extra={"correlation_id": correlation_id},
         )
-        return result
+        return MessageResponse(
+            message="User registered successfully. Please check your email for verification."
+        )
 
     except Exception as e:
         logger.error(
@@ -57,12 +63,16 @@ async def register(
         raise
 
 
-@router.get("/verify-email-token/{token}", status_code=status.HTTP_200_OK)
+@router.get(
+    "/verify-email-token/{token}",
+    response_model=VerificationResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def verify_email_token(
     token: str,
     service: AuthService = AuthServiceDep,
     correlation_id: Optional[str] = CorrelationIdDep,
-) -> Dict[str, bool]:
+) -> VerificationResponse:
     """Verify user's email address using verification token"""
     try:
         result = await service.verify_email_token(token)
@@ -71,7 +81,12 @@ async def verify_email_token(
             f"Email verification result: {result}",
             extra={"correlation_id": correlation_id},
         )
-        return {"verified": result}
+        return VerificationResponse(
+            verified=result,
+            message="Email verified successfully"
+            if result
+            else "Email verification failed",
+        )
 
     except Exception as e:
         logger.error(
@@ -107,13 +122,13 @@ async def login(
         raise
 
 
-@router.post("/logout", status_code=status.HTTP_200_OK)
+@router.post("/logout", response_model=MessageResponse, status_code=status.HTTP_200_OK)
 async def logout(
     response: Response,
     current_user: User = AuthenticatedUserDep,
     service: AuthService = AuthServiceDep,
     correlation_id: Optional[str] = CorrelationIdDep,
-) -> Dict[str, str]:
+) -> MessageResponse:
     """Logout user and clear authentication cookies"""
     try:
         result = await service.logout_user(current_user, response)
@@ -122,7 +137,7 @@ async def logout(
             f"User logout successful: {current_user.id}",
             extra={"correlation_id": correlation_id},
         )
-        return result
+        return MessageResponse(message=result.get("message", "Logged out successfully"))
 
     except Exception as e:
         logger.error(
@@ -132,12 +147,14 @@ async def logout(
         raise
 
 
-@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+@router.post(
+    "/forgot-password", response_model=MessageResponse, status_code=status.HTTP_200_OK
+)
 async def forgot_password(
     data: PasswordResetRequest,
     service: AuthService = AuthServiceDep,
     correlation_id: Optional[str] = CorrelationIdDep,
-) -> Dict[str, str]:
+) -> MessageResponse:
     """Request password reset token"""
     try:
         result = await service.forgot_password(data)
@@ -146,7 +163,9 @@ async def forgot_password(
             f"Password reset requested for: {data.email}",
             extra={"correlation_id": correlation_id},
         )
-        return result
+        return MessageResponse(
+            message=result.get("message", "Password reset email sent")
+        )
 
     except Exception as e:
         logger.error(
@@ -179,7 +198,9 @@ async def reset_password(
         raise
 
 
-@router.post("/change-password", status_code=status.HTTP_200_OK)
+@router.post(
+    "/change-password", response_model=MessageResponse, status_code=status.HTTP_200_OK
+)
 async def change_password(
     request: Request,
     data: PasswordChangeRequest,
@@ -187,7 +208,7 @@ async def change_password(
     service: AuthService = AuthServiceDep,
     correlation_id: Optional[str] = CorrelationIdDep,
     db: AsyncSession = DatabaseDep,
-) -> Dict[str, str]:
+) -> MessageResponse:
     """Change user password (authenticated)"""
     try:
         await service.change_password(data, current_user)
@@ -196,7 +217,7 @@ async def change_password(
             f"Password changed for user: {current_user.id}",
             extra={"correlation_id": correlation_id},
         )
-        return {"message": "Password changed successfully"}
+        return MessageResponse(message="Password changed successfully")
 
     except Exception as e:
         logger.error(

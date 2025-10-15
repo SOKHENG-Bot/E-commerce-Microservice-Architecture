@@ -4,7 +4,7 @@ from typing import Dict, List
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer  # type: ignore
 from aiokafka.admin import AIOKafkaAdminClient, NewTopic  # type: ignore
-from aiokafka.errors import KafkaConnectionError, KafkaError  # type: ignore
+from aiokafka.errors import KafkaConnectionError  # type: ignore
 
 from user_service.app.core.settings import get_settings
 from user_service.app.utils.logging import setup_user_logging as setup_logging
@@ -38,18 +38,25 @@ class KafkaEventPublisher(EventPublisher):
 
     async def ensure_topic_exists(self, topic_name: str):
         """Ensure a Kafka topic exists, creating it if necessary."""
-        admin_client = AIOKafkaAdminClient(bootstrap_servers=self.bootstrap_servers)
-        await admin_client.start()  # type: ignore
         try:
-            topics = await admin_client.list_topics()
-            if topic_name not in topics:
-                await admin_client.create_topics(
-                    [NewTopic(name=topic_name, num_partitions=1, replication_factor=1)]
-                )
-                logger.info(
-                    "Created Kafka topic",
-                    extra={"topic_name": topic_name, "operation": "create_topic"},
-                )
+            admin_client = AIOKafkaAdminClient(bootstrap_servers=self.bootstrap_servers)
+            await admin_client.start()  # type: ignore
+            try:
+                topics = await admin_client.list_topics()
+                if topic_name not in topics:
+                    await admin_client.create_topics(
+                        [
+                            NewTopic(
+                                name=topic_name, num_partitions=1, replication_factor=1
+                            )
+                        ]
+                    )
+                    logger.info(
+                        "Created Kafka topic",
+                        extra={"topic_name": topic_name, "operation": "create_topic"},
+                    )
+            finally:
+                await admin_client.close()  # type: ignore
         except Exception as e:
             logger.warning(
                 "Error ensuring Kafka topic exists",
@@ -59,8 +66,7 @@ class KafkaEventPublisher(EventPublisher):
                     "operation": "ensure_topic_exists",
                 },
             )
-        finally:
-            await admin_client.close()  # type: ignore
+            # Continue anyway - the publish will fail gracefully
 
     async def start(self, timeout: float = 30.0) -> None:
         """Start Kafka producer with retry logic"""
@@ -78,40 +84,52 @@ class KafkaEventPublisher(EventPublisher):
                 connections_max_idle_ms=540000,
             )
 
-            # Retry connection with exponential backoff
-            for attempt in range(self.max_retries):
-                try:
-                    logger.info(
-                        "Attempting Kafka connection",
-                        extra={
-                            "attempt": attempt + 1,
-                            "max_retries": self.max_retries,
-                            "operation": "kafka_connect",
-                        },
+            if self.enable_graceful_degradation:
+                # Start connection in background to not block startup
+                asyncio.create_task(self._connect_with_retries(timeout))
+                logger.info(
+                    "Started Kafka connection in background - operating in degraded mode initially"
+                )
+            else:
+                # Blocking connection for non-graceful mode
+                await self._connect_with_retries(timeout)
+
+    async def _connect_with_retries(self, timeout: float) -> None:
+        """Internal method to handle connection retries"""
+        # Retry connection with exponential backoff
+        for attempt in range(self.max_retries):
+            try:
+                logger.info(
+                    "Attempting Kafka connection",
+                    extra={
+                        "attempt": attempt + 1,
+                        "max_retries": self.max_retries,
+                        "operation": "kafka_connect",
+                    },
+                )
+
+                # Use asyncio.wait_for to add timeout
+                await asyncio.wait_for(self.producer.start(), timeout=timeout)  # type: ignore
+
+                self.is_connected = True
+                logger.info("Successfully connected to Kafka")
+                return
+
+            except (KafkaConnectionError, asyncio.TimeoutError) as e:  # noqa: F821
+                logger.warning(
+                    f"Kafka connection attempt {attempt + 1} failed: {e}. "
+                    f"Retrying in {self.retry_delay * (2**attempt)} seconds..."
+                )
+
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (2**attempt))
+                else:
+                    logger.error(
+                        f"Failed to connect to Kafka after {self.max_retries} attempts. "
+                        f"Giving up. Running in degraded mode (events will be logged but not published)"
                     )
-
-                    # Use asyncio.wait_for to add timeout
-                    await asyncio.wait_for(self.producer.start(), timeout=timeout)  # type: ignore
-
-                    self.is_connected = True
-                    logger.info("Successfully connected to Kafka")
+                    self.is_connected = False
                     return
-
-                except (KafkaConnectionError, asyncio.TimeoutError) as e:  # noqa: F821
-                    logger.warning(
-                        f"Kafka connection attempt {attempt + 1} failed: {e}. "
-                        f"Retrying in {self.retry_delay * (2**attempt)} seconds..."
-                    )
-
-                    if attempt < self.max_retries - 1:
-                        await asyncio.sleep(self.retry_delay * (2**attempt))
-                    else:
-                        logger.error(
-                            f"Failed to connect to Kafka after {self.max_retries} attempts. "
-                            f"Giving up. Running in degraded mode (events will be logged but not published)"
-                        )
-                        self.is_connected = False
-                        return
 
     async def stop(self) -> None:
         """Stop Kafka producer"""
@@ -172,7 +190,7 @@ class KafkaEventPublisher(EventPublisher):
                 },
             )
 
-        except KafkaError as e:
+        except Exception as e:
             if self.enable_graceful_degradation:
                 logger.error(
                     f"Failed to publish event {event.event_type}, logging instead: {e}",
@@ -263,6 +281,18 @@ class KafkaEventSubscriber(EventSubscriber):
 
     async def start(self, timeout: float = 30.0):
         """Start event subscriber with retry logic"""
+        if self.enable_graceful_degradation:
+            # Start connection in background to not block startup
+            asyncio.create_task(self._connect_with_retries(timeout))
+            logger.info(
+                "Started Kafka subscriber connection in background - operating in degraded mode initially"
+            )
+        else:
+            # Blocking connection for non-graceful mode
+            await self._connect_with_retries(timeout)
+
+    async def _connect_with_retries(self, timeout: float) -> None:
+        """Internal method to handle connection retries"""
         for attempt in range(self.max_retries):
             try:
                 logger.info(

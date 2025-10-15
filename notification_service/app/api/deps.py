@@ -21,9 +21,16 @@ from ..services.notification_service import NotificationService
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    """Provide async database session"""
+    """Provide async database session with commit on success"""
     async with database_manager.async_session_maker() as session:
-        yield session
+        try:
+            yield session
+            # Commit on successful completion
+            await session.commit()
+        except Exception:
+            # Rollback on error
+            await session.rollback()
+            raise
 
 
 # =====================================================

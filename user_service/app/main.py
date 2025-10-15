@@ -272,7 +272,22 @@ def _setup_middleware(app: FastAPI) -> None:
         setup_user_auth_middleware,
     )
 
-    setup_user_auth_middleware(app, jwt_handler=jwt_handler)
+    setup_user_auth_middleware(
+        app,
+        jwt_handler=jwt_handler,
+        exclude_paths=[
+            "/health",
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/api/v1/auth/login",
+            "/api/v1/auth/register",
+            "/api/v1/auth/refresh",
+            "/api/v1/auth/verify-email-token",
+            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/reset-password",
+        ],
+    )
     logger.info("Authentication middleware configured")
 
     # 5. Role Authorization - Role-based access control
@@ -348,22 +363,6 @@ def _setup_routers(app: FastAPI) -> None:
     routers_info.append(
         {"router": "permissions", "prefix": "/api/v1", "tags": ["Permissions"]}
     )
-
-    # Add management routes
-    try:
-        from user_service.app.api.v1.management import router as management_router
-
-        app.include_router(management_router)
-        routers_info.append(
-            {
-                "router": "management",
-                "prefix": "/user-service",
-                "tags": ["user-service-management"],
-            }
-        )
-        logger.info("Management routes registered at /user-service/*")
-    except ImportError as e:
-        logger.warning(f"Management routes not available: {e}")
 
     logger.info(
         "API routes configured",

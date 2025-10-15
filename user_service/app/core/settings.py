@@ -9,7 +9,8 @@ from pydantic_settings import BaseSettings
 
 # Get the root directory path (ecommerce-microservices)
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
-ENV_FILE = ROOT_DIR / ".env"
+# Load from user_service/.env
+ENV_FILE = ROOT_DIR / "user_service" / ".env"
 
 
 class UserServiceSettings(BaseSettings):
@@ -55,13 +56,6 @@ class UserServiceSettings(BaseSettings):
     RATE_LIMIT_WINDOW: int
     RATE_LIMIT_PER_USER_REQUESTS: int
     RATE_LIMIT_PER_USER_WINDOW: int
-
-    # Email settings
-    SMTP_HOST: str
-    SMTP_PORT: int
-    SMTP_USERNAME: str
-    SMTP_PASSWORD: str
-    SMTP_FROM_EMAIL: str
 
     # CORS
     CORS_ORIGINS: List[str]

@@ -4,14 +4,15 @@ Notification Service FastAPI Application
 
 Main application entry point for the Notification Service microservice.
 Handles email/SMS notifications, template management, and bulk messaging.
-Provides REST API endpoints with comprehensive middleware stack for security,
+Provides REST API endpoints with     # 2. Authentication - JWT token validation and user context
+    setup_notification_auth_middleware(app)e middleware stack for security,
 monitoring, and performance optimization.
 """
 
+import asyncio
 import os
 import sys
 import time
-import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, List, Optional
@@ -35,7 +36,9 @@ from .events.consumers import NotificationEventConsumer
 
 # Middleware
 from .middleware.auth.auth_middleware import setup_notification_auth_middleware
-from .middleware.auth.role_middleware import setup_notification_role_authorization_middleware
+from .middleware.auth.role_middleware import (
+    setup_notification_role_authorization_middleware,
+)
 from .middleware.error import setup_error_middleware
 from .middleware.validation import setup_validation_middleware
 
@@ -47,6 +50,9 @@ sys.path.insert(0, str(project_root))
 settings = get_settings()
 environment = os.getenv("ENVIRONMENT", "development").lower()
 enable_file_logging = environment in ["production", "staging"]
+
+# Global event consumer reference for shutdown
+_event_consumer: Optional[NotificationEventConsumer] = None
 
 
 def _setup_application_logging():
@@ -71,7 +77,7 @@ def _setup_application_logging():
 
     return setup_logging(
         "notification_service",
-        log_level=getattr(settings, 'LOG_LEVEL', 'INFO'),
+        log_level=getattr(settings, "LOG_LEVEL", "INFO"),
         enable_file_logging=enable_file_logging,
         enable_performance_logging=True,
     )
@@ -155,24 +161,31 @@ async def _init_event_consumer(app: FastAPI) -> int:
 
     session = database_manager.async_session_maker()
     consumer = NotificationEventConsumer(session)
-    
+
     # Start consumer in background to avoid blocking startup
     asyncio.create_task(_start_event_consumer_async(consumer, app))
 
     duration = int((time.time() - start_time) * 1000)
-    logger.info("Event consumer initialization started (non-blocking)", extra={"duration_ms": duration})
+    logger.info(
+        "Event consumer initialization started (non-blocking)",
+        extra={"duration_ms": duration},
+    )
     return duration
 
 
-async def _start_event_consumer_async(consumer: NotificationEventConsumer, app: FastAPI) -> None:
+async def _start_event_consumer_async(
+    consumer: NotificationEventConsumer, app: FastAPI
+) -> None:
     """Start event consumer asynchronously without blocking startup."""
+    global _event_consumer
     try:
         await consumer.start()
-        app.state.event_consumer = consumer
+        _event_consumer = consumer
+        app.state.event_consumer = consumer  # Keep for backward compatibility
         logger.info("Event consumer started successfully")
     except Exception as e:
         logger.warning(f"Event consumer failed to start, continuing without it: {e}")
-        # Don't set app.state.event_consumer if it fails
+        # Don't set the global reference if it fails
 
 
 async def _handle_startup_error(startup_start: float, error: Exception) -> None:
@@ -189,14 +202,16 @@ async def _handle_startup_error(startup_start: float, error: Exception) -> None:
 
 async def _shutdown_services() -> None:
     """Shutdown all application services gracefully."""
+    global _event_consumer
     shutdown_start = time.time()
 
     try:
         logger.info("Starting notification service shutdown")
 
         # Stop event consumer
-        if hasattr(app.state, "event_consumer"):
-            await app.state.event_consumer.stop()
+        if _event_consumer:
+            await _event_consumer.stop()
+            _event_consumer = None
 
         await close_events()
 
@@ -258,7 +273,18 @@ def _setup_middleware(app: FastAPI) -> None:
     logger.info("Request validation middleware configured")
 
     # 2. Authentication - JWT token validation and user context
-    setup_notification_auth_middleware(app)
+    setup_notification_auth_middleware(
+        app,
+        exclude_paths=[
+            "/health",
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/api/v1/health",
+            "/api/v1/templates",  # Allow template management without auth for development
+            "/api/v1/notifications/send",
+        ],
+    )
     logger.info("Authentication middleware configured")
 
     # 3. Role Authorization - Role-based access control
@@ -310,9 +336,15 @@ def _setup_routers(app: FastAPI) -> None:
     )
 
     # Bulk notifications router
-    app.include_router(bulk_notifications_router, prefix="/api/v1", tags=["Bulk Notifications"])
+    app.include_router(
+        bulk_notifications_router, prefix="/api/v1", tags=["Bulk Notifications"]
+    )
     routers_info.append(
-        {"router": "bulk_notifications", "prefix": "/api/v1", "tags": ["Bulk Notifications"]}
+        {
+            "router": "bulk_notifications",
+            "prefix": "/api/v1",
+            "tags": ["Bulk Notifications"],
+        }
     )
 
     logger.info(

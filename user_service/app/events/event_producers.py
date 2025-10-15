@@ -9,12 +9,14 @@ from user_service.app.events.schemas.events import (
     PROFILE_UPDATED,
     USER_CREATED,
     USER_DELETED,
+    USER_EMAIL_VERIFICATION_REQUESTED,
     USER_EMAIL_VERIFIED,
     USER_UPDATED,
     ProfileCreatedEventData,
     ProfileUpdatedEventData,
     UserCreatedEventData,
     UserDeletedEventData,
+    UserEmailVerificationRequestedEventData,
     UserEmailVerifiedEventData,
     UserUpdatedEventData,
 )
@@ -103,6 +105,42 @@ class UserEventProducer:
             )
         except Exception as e:
             logger.error(f"Failed to publish verify email event: {e}")
+            raise
+
+    async def publish_email_verification_request(
+        self,
+        user: User,
+        verification_token: str,
+        expires_in_minutes: int,
+    ) -> None:
+        """Publish email verification request event"""
+        try:
+            # Create event data
+            event_data = UserEmailVerificationRequestedEventData(
+                user_id=user.id,
+                email=user.email,
+                verification_token=verification_token,
+                expires_in_minutes=expires_in_minutes,
+                requested_at=datetime.now(timezone.utc),
+            )
+
+            # Create BaseEvent
+            event = BaseEvent(
+                event_type=USER_EMAIL_VERIFICATION_REQUESTED,
+                source_service="user-service",
+                data=event_data.to_dict(),
+            )
+
+            await self.event_publisher.publish(event, topic="user.events")
+            logger.info(
+                "Published email verification request event.",
+                extra={
+                    "user_id": str(user.id),
+                    "email": user.email,
+                },
+            )
+        except Exception as e:
+            logger.error(f"Failed to publish email verification request event: {e}")
             raise
 
     async def publish_password_reset_request(

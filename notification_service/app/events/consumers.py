@@ -13,6 +13,55 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
+class EmailVerificationHandler(EventHandler):
+    """Handle email verification request events to send verification emails"""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.event_producer = get_event_producer()
+        self.notification_service = NotificationService(session, self.event_producer)
+
+    async def handle(self, event: BaseEvent) -> None:
+        """Handle email verification request event - send verification email"""
+        try:
+            data = event.data
+            user_id = data["user_id"]
+            email = data["email"]
+            verification_token = data["verification_token"]
+            expires_in_minutes = data["expires_in_minutes"]
+
+            # Create verification link
+            verification_url = f"http://localhost:8010/api/v1/auth/verify-email-token/{verification_token}"
+
+            # Send email verification notification
+            template_data: Dict[str, Any] = {
+                "user_email": email,
+                "verification_url": verification_url,
+                "expires_in_minutes": expires_in_minutes,
+            }
+
+            await self.notification_service.send_email_notification(
+                user_id=user_id,
+                template_name="email_verification",
+                template_data=template_data,
+                recipient_email=email,
+            )
+
+            logger.info(
+                "Sent email verification notification",
+                extra={
+                    "user_id": str(user_id),
+                    "email": email,
+                    "correlation_id": str(event.correlation_id)
+                    if event.correlation_id
+                    else None,
+                },
+            )
+        except Exception as e:
+            logger.error(f"Failed to handle email verification request event: {e}")
+            raise
+
+
 class UserCreatedHandler(EventHandler):
     """Handle user created events to send welcome notifications"""
 
@@ -31,14 +80,15 @@ class UserCreatedHandler(EventHandler):
 
             # Send welcome email notification
             template_data: Dict[str, Any] = {
-                "name": first_name or "there",
-                "email": email,
+                "user_name": first_name or "there",
+                "user_email": email,
             }
 
             await self.notification_service.send_email_notification(
                 user_id=user_id,
                 template_name="welcome_email",
                 template_data=template_data,
+                recipient_email=email,
             )
 
             logger.info(
@@ -84,6 +134,7 @@ class OrderCreatedHandler(EventHandler):
                 user_id=user_id,
                 template_name="order_confirmation",
                 template_data=template_data,
+                recipient_email=customer_email,
             )
 
             logger.info(
@@ -132,6 +183,7 @@ class OrderShippedHandler(EventHandler):
                 user_id=user_id,
                 template_name="order_shipped",
                 template_data=template_data,
+                recipient_email=customer_email,
             )
 
             logger.info(
@@ -170,11 +222,18 @@ class NotificationEventConsumer:
         await self.subscriber.start()
 
         # Register event handlers for different services
+        email_verification_handler = EmailVerificationHandler(self.session)
         user_created_handler = UserCreatedHandler(self.session)
         order_created_handler = OrderCreatedHandler(self.session)
         order_shipped_handler = OrderShippedHandler(self.session)
 
         # Subscribe to multiple event types from different services
+        await self.subscriber.subscribe(
+            topic="user.events",
+            event_type="user.email_verification_requested",
+            handler=email_verification_handler,
+        )
+
         await self.subscriber.subscribe(
             topic="user.events", event_type="user.created", handler=user_created_handler
         )
@@ -195,6 +254,7 @@ class NotificationEventConsumer:
             "Started consuming notification service events",
             extra={
                 "subscriptions": [
+                    "user.events:user.email_verification_requested",
                     "user.events:user.created",
                     "order.events:order.created",
                     "order.events:order.shipped",

@@ -6,7 +6,7 @@ import httpx
 from jinja2 import DictLoader, Environment
 
 from ..core.settings import get_settings
-from ..middleware.logging_middleware import create_enhanced_logger
+from ..middleware.logging import create_enhanced_logger
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

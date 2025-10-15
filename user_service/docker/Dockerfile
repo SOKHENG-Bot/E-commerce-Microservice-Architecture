@@ -11,11 +11,12 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first (so pip install can be cached)
-COPY requirements.txt ./user_service/requirements.txt
+COPY ../requirements.txt ./user_service/requirements.txt
 RUN pip install --no-cache-dir -r ./user_service/requirements.txt
 
 # Copy app code (this will change most often, so put last)
-COPY app ./user_service/app
+COPY ../app ./user_service/app
+COPY ../.env ./.env
 
 # Create data directory for SQLite and set permissions
 RUN mkdir -p /app/data && chmod 777 /app/data

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -99,6 +99,15 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    version: str
+    timestamp: str
+    uptime_seconds: float
+    database: Dict[str, Any] = {}
+
+
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(
         ..., description="Refresh token for generating new access token"
@@ -162,3 +171,24 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     email: EmailStr
     new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class PermissionCheckResponse(BaseModel):
+    user_id: int
+    permission: str
+    has_permission: bool
+
+
+class UserPermissionsResponse(BaseModel):
+    user_id: int
+    permissions: list[str]
+
+
+class UserRolesResponse(BaseModel):
+    user_id: int
+    roles: list[str]
+
+
+class AvailablePermissionsResponse(BaseModel):
+    permissions: list[str]
+    roles: list[str]

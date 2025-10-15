@@ -31,9 +31,8 @@ class NotificationRepository:
             max_retries=notification_data.max_retries,
             status=NotificationStatus.PENDING.value,
         )
-
         self.session.add(db_notification)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(db_notification)
         return db_notification
 
@@ -76,13 +75,24 @@ class NotificationRepository:
 
     async def get_pending_notifications(self, limit: int = 100) -> list[Notification]:
         """Get pending notifications for processing"""
+        # Create a case statement for priority ordering (HIGH = 3, MEDIUM = 2, LOW = 1)
+        from sqlalchemy import case
+
+        priority_order = case(
+            (Notification.priority == NotificationPriority.HIGH.value, 3),
+            (Notification.priority == NotificationPriority.MEDIUM.value, 2),
+            (Notification.priority == NotificationPriority.LOW.value, 1),
+            else_=0,
+        )
+
         query = (
             select(Notification)
             .where(Notification.status == NotificationStatus.PENDING.value)
             .order_by(
-                desc(Notification.priority == NotificationPriority.HIGH.value),
-                desc(Notification.priority == NotificationPriority.MEDIUM.value),
-                asc(Notification.created_at),
+                desc(priority_order),  # Higher priority first
+                asc(
+                    Notification.created_at
+                ),  # Older notifications first within same priority
             )
             .limit(limit)
         )
@@ -123,7 +133,7 @@ class NotificationRepository:
             if hasattr(notification, field):
                 setattr(notification, field, value)
 
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(notification)
         return notification
 
@@ -132,7 +142,7 @@ class NotificationRepository:
     ) -> bool:
         """Mark notification as sent"""
         update_data = NotificationUpdate(
-            status=NotificationStatus.SENT,
+            status=SchemaNotificationStatus.SENT,
             sent_at=datetime.now(timezone.utc),
             provider_response=provider_response,
         )
@@ -147,7 +157,7 @@ class NotificationRepository:
             delivered_at = datetime.now(timezone.utc)
 
         update_data = NotificationUpdate(
-            status=NotificationStatus.DELIVERED, delivered_at=delivered_at
+            status=SchemaNotificationStatus.DELIVERED, delivered_at=delivered_at
         )
         result = await self.update_notification(notification_id, update_data)
         return result is not None
@@ -221,5 +231,5 @@ class NotificationRepository:
         notification.status = "cancelled"
         # updated_at will be set automatically by BaseModel
 
-        await self.session.commit()
+        await self.session.flush()
         return True
