@@ -3,28 +3,17 @@ Authentication middleware for Notification Service.
 Handles JWT token validation, user context extraction, and authorization.
 """
 
-import logging
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# Setup logger
-try:
-    from notification_service.app.utils.logging import setup_notification_logging
+# Import dependencies for JWT handling
+from notification_service.app.core.settings import get_settings
+from notification_service.app.utils.jwt_handler import NotificationJWTHandler
+from notification_service.app.utils.logging import setup_notification_logging
 
-    logger = setup_notification_logging("notification_service_auth")
-except ImportError:
-    logger = logging.getLogger("notification_service_auth")
-    logger.setLevel(logging.INFO)
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+logger = setup_notification_logging("notification_service_auth")
 
 
 class NotificationServiceAuthMiddleware(BaseHTTPMiddleware):
@@ -53,19 +42,11 @@ class NotificationServiceAuthMiddleware(BaseHTTPMiddleware):
             "/openapi.json",
             "/api/v1/health",
         ]
-        self.security = HTTPBearer(auto_error=False)
 
         # Use provided JWT handler or create default one
         if jwt_handler:
             self.jwt_handler = jwt_handler
         else:
-            # Import dependencies for JWT handling
-            from notification_service.app.utils.jwt_handler import (
-                NotificationJWTHandler,
-            )
-
-            from notification_service.app.core.settings import get_settings
-
             settings = get_settings()
             self.jwt_handler = NotificationJWTHandler(
                 secret_key=settings.SECRET_KEY, algorithm=settings.ALGORITHM

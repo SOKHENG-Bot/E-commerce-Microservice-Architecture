@@ -3,27 +3,14 @@ Role-based authorization middleware for Notification Service.
 Handles role-based access control at the middleware level.
 """
 
-import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
 
 from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# Setup logger
-try:
-    from notification_service.app.utils.logging import setup_notification_logging
+from notification_service.app.utils.logging import setup_notification_logging
 
-    logger = setup_notification_logging("notification_service_roles")
-except ImportError:
-    logger = logging.getLogger("notification_service_roles")
-    logger.setLevel(logging.INFO)
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+logger = setup_notification_logging("notification_service_roles")
 
 
 class NotificationServiceRoleAuthorizationMiddleware(BaseHTTPMiddleware):

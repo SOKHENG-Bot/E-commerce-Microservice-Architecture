@@ -4,11 +4,10 @@ Validation middleware for request/response validation, security, and input sanit
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request, Response, status
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.base import RequestResponseEndpoint
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from ...utils.logging import setup_notification_logging
 
@@ -175,29 +174,36 @@ class ValidationMiddleware(BaseHTTPMiddleware):
             )
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=f"Content type '{content_type}' is not supported. Allowed types: {', '.join(self.allowed_content_types)}",
+                detail=f"Content type '{content_type}' is not supported. "
+                f"Allowed types: {', '.join(self.allowed_content_types)}",
             )
 
     async def _has_request_body(self, request: Request) -> bool:
         """Check if request has a body."""
-        return request.method in ["POST", "PUT", "PATCH"] and request.headers.get("content-length", "0") != "0"
+        return (
+            request.method in ["POST", "PUT", "PATCH"]
+            and request.headers.get("content-length", "0") != "0"
+        )
 
     async def _read_request_body(self, request: Request) -> bytes:
         """Read request body for validation."""
-        body = await request.body()
+        # Read the body from stream without consuming it permanently
+        body = b""
+        async for chunk in request.stream():
+            body += chunk
 
-        # Reset body for next middleware/endpoint
-        async def receive():
-            return {"type": "http.request", "body": body, "more_body": False}
+        # For FastAPI, we need to restore the body for subsequent handlers
+        # This is a bit of a hack, but necessary for middleware that needs to inspect body
+        if hasattr(request, "_body"):
+            request._body = body  # type: ignore
 
-        request._receive = receive
         return body
 
     async def _validate_request_body(self, request: Request, body: bytes) -> None:
         """Validate request body content."""
+        content_type = request.headers.get("content-type", "")
         try:
             # Try to parse as JSON for JSON requests
-            content_type = request.headers.get("content-type", "")
             if "application/json" in content_type:
                 json_data = json.loads(body.decode("utf-8"))
                 await self._validate_json_data(request, json_data)
@@ -221,7 +227,7 @@ class ValidationMiddleware(BaseHTTPMiddleware):
             return
 
         # Recursively validate all string values
-        await self._validate_dict_data(request, data)
+        await self._validate_dict_data(request, data)  # type: ignore
 
     async def _validate_dict_data(self, request: Request, data: Dict[str, Any]) -> None:
         """Recursively validate dictionary data."""
@@ -229,15 +235,18 @@ class ValidationMiddleware(BaseHTTPMiddleware):
             if isinstance(value, str):
                 await self._validate_string_value(request, key, value)
             elif isinstance(value, dict):
-                await self._validate_dict_data(request, value)
+                await self._validate_dict_data(request, value)  # type: ignore
             elif isinstance(value, list):
-                for item in value:
+                for item in value:  # type: ignore
                     if isinstance(item, dict):
-                        await self._validate_dict_data(request, item)
+                        await self._validate_dict_data(request, item)  # type: ignore
                     elif isinstance(item, str):
                         await self._validate_string_value(request, key, item)
+                    # Skip other types (numbers, booleans, None, etc.) as they don't need string validation
 
-    async def _validate_string_value(self, request: Request, key: str, value: str) -> None:
+    async def _validate_string_value(
+        self, request: Request, key: str, value: str
+    ) -> None:
         """Validate individual string values for security threats."""
 
         # XSS protection

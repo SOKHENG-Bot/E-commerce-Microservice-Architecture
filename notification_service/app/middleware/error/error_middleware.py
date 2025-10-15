@@ -3,7 +3,7 @@ Error handling middleware for global exception management and standardized error
 """
 
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -31,7 +31,9 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         app: Any,
         debug_mode: bool = False,
         include_traceback: bool = False,
-        custom_error_handlers: Optional[Dict[type, callable]] = None,
+        custom_error_handlers: Optional[
+            Dict[type, Callable[[Request, Exception], Awaitable[JSONResponse]]]
+        ] = None,
     ):
         super().__init__(app)
         self.debug_mode = debug_mode
@@ -79,7 +81,7 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
     ) -> JSONResponse:
         """Handle FastAPI HTTPException with standardized format."""
 
-        error_response = {
+        error_response: Dict[str, Any] = {
             "error": {
                 "code": f"HTTP_{exc.status_code}",
                 "message": exc.detail,
@@ -130,10 +132,12 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         # Determine status code based on exception type
         status_code = await self._get_status_code_for_exception(exc)
 
-        error_response = {
+        error_response: Dict[str, Any] = {
             "error": {
                 "code": f"INTERNAL_ERROR_{exc_type.upper()}",
-                "message": exc_message if self.debug_mode else "An internal error occurred",
+                "message": exc_message
+                if self.debug_mode
+                else "An internal error occurred",
                 "type": "internal_error",
                 "status_code": status_code,
             },
@@ -162,7 +166,9 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                 "path": request.url.path,
                 "method": request.method,
                 "user_agent": request.headers.get("user-agent", "unknown"),
-                "traceback": exc_traceback if self.include_traceback else "not included",
+                "traceback": exc_traceback
+                if self.include_traceback
+                else "not included",
             },
         )
 
@@ -179,11 +185,17 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             return status.HTTP_503_SERVICE_UNAVAILABLE
 
         # Connection/network errors
-        if "connection" in str(type(exc)).lower() or "network" in str(type(exc)).lower():
+        if (
+            "connection" in str(type(exc)).lower()
+            or "network" in str(type(exc)).lower()
+        ):
             return status.HTTP_503_SERVICE_UNAVAILABLE
 
         # Validation errors
-        if "validation" in str(type(exc)).lower() or "pydantic" in str(type(exc)).lower():
+        if (
+            "validation" in str(type(exc)).lower()
+            or "pydantic" in str(type(exc)).lower()
+        ):
             return status.HTTP_422_UNPROCESSABLE_ENTITY
 
         # Authentication/Authorization errors
@@ -204,13 +216,15 @@ async def handle_validation_error(request: Request, exc: Exception) -> JSONRespo
     from pydantic import ValidationError
 
     if isinstance(exc, ValidationError):
-        error_details = []
+        error_details: List[Dict[str, str]] = []
         for error in exc.errors():
-            error_details.append({
-                "field": ".".join(str(loc) for loc in error["loc"]),
-                "message": error["msg"],
-                "type": error["type"],
-            })
+            error_details.append(
+                {
+                    "field": ".".join(str(loc) for loc in error["loc"]),
+                    "message": error["msg"],
+                    "type": error["type"],
+                }
+            )
 
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -268,7 +282,9 @@ def setup_error_middleware(
     app: Any,
     debug_mode: bool = False,
     include_traceback: bool = False,
-    custom_error_handlers: Optional[Dict[type, callable]] = None,
+    custom_error_handlers: Optional[
+        Dict[type, Callable[[Request, Exception], Awaitable[JSONResponse]]]
+    ] = None,
 ) -> None:
     """
     Setup error handling middleware for the FastAPI application.
@@ -281,7 +297,9 @@ def setup_error_middleware(
     """
 
     # Default custom error handlers
-    default_handlers = {
+    default_handlers: Dict[
+        type, Callable[[Request, Exception], Awaitable[JSONResponse]]
+    ] = {
         # Add more custom handlers as needed
     }
 
@@ -292,7 +310,8 @@ def setup_error_middleware(
     app.add_middleware(
         ErrorHandlingMiddleware,
         debug_mode=debug_mode,
-        include_traceback=include_traceback and debug_mode,  # Only include traceback in debug mode
+        include_traceback=include_traceback
+        and debug_mode,  # Only include traceback in debug mode
         custom_error_handlers=default_handlers,
     )
 
