@@ -288,7 +288,17 @@ def _setup_middleware(app: FastAPI) -> None:
     logger.info("Authentication middleware configured")
 
     # 3. Role Authorization - Role-based access control
-    setup_notification_role_authorization_middleware(app)
+    setup_notification_role_authorization_middleware(
+        app,
+        exclude_paths=[
+            "/health",
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/api/v1/health",
+            "/api/v1/templates",  # Allow template management without role auth for development
+        ],
+    )
     logger.info("Role authorization middleware configured")
 
     # 4. Error Handling - Centralized exception handling
@@ -324,25 +334,33 @@ def _setup_routers(app: FastAPI) -> None:
     routers_info.append({"router": "health", "prefix": "", "tags": ["Health"]})
 
     # Notifications router
-    app.include_router(notifications_router, prefix="/api/v1", tags=["Notifications"])
+    app.include_router(
+        notifications_router, prefix="/api/v1/notifications", tags=["Notifications"]
+    )
     routers_info.append(
-        {"router": "notifications", "prefix": "/api/v1", "tags": ["Notifications"]}
+        {
+            "router": "notifications",
+            "prefix": "/api/v1/notifications",
+            "tags": ["Notifications"],
+        }
     )
 
     # Templates router
-    app.include_router(templates_router, prefix="/api/v1", tags=["Templates"])
+    app.include_router(templates_router, prefix="/api/v1/templates", tags=["Templates"])
     routers_info.append(
-        {"router": "templates", "prefix": "/api/v1", "tags": ["Templates"]}
+        {"router": "templates", "prefix": "/api/v1/templates", "tags": ["Templates"]}
     )
 
     # Bulk notifications router
     app.include_router(
-        bulk_notifications_router, prefix="/api/v1", tags=["Bulk Notifications"]
+        bulk_notifications_router,
+        prefix="/api/v1/bulk-notifications",
+        tags=["Bulk Notifications"],
     )
     routers_info.append(
         {
             "router": "bulk_notifications",
-            "prefix": "/api/v1",
+            "prefix": "/api/v1/bulk-notifications",
             "tags": ["Bulk Notifications"],
         }
     )

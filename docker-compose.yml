@@ -1,0 +1,728 @@
+version: "3.8"
+
+services:
+  # Shared Infrastructure
+
+  # Zookeeper for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: ecommerce_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo 'ruok' | nc localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Shared Kafka Cluster
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: ecommerce_kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,INTERNAL://kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "kafka-topics",
+          "--bootstrap-server",
+          "localhost:9092",
+          "--list",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "9092:9092"
+    networks:
+      - ecommerce-network
+
+  # Kafka UI for monitoring
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: ecommerce_kafka_ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "ecommerce-kafka"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9092"
+      KAFKA_CLUSTERS_0_ZOOKEEPER: "zookeeper:2181"
+    depends_on:
+      - kafka
+    networks:
+      - ecommerce-network
+
+  # Shared PostgreSQL Databases
+
+  # User Service Database
+  user_postgres:
+    image: postgres:15
+    container_name: user_postgres
+    environment:
+      POSTGRES_DB: user
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5435:5432"
+    volumes:
+      - user_postgres_data:/var/lib/postgresql/data
+      - ./user_service/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d user"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Product Service Database
+  product_postgres:
+    image: postgres:15
+    container_name: product_postgres
+    environment:
+      POSTGRES_DB: product
+      POSTGRES_USER: product
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5436:5432"
+    volumes:
+      - product_postgres_data:/var/lib/postgresql/data
+      - ./product_service/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U product -d product"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Order Service Database
+  order_postgres:
+    image: postgres:15
+    container_name: order_postgres
+    environment:
+      POSTGRES_DB: order
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5437:5432"
+    volumes:
+      - order_postgres_data:/var/lib/postgresql/data
+      - ./order_service/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order -d order"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Notification Service Database
+  notification_postgres:
+    image: postgres:15
+    container_name: notification_postgres
+    environment:
+      POSTGRES_DB: notification
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    volumes:
+      - notification_postgres_data:/var/lib/postgresql/data
+      - ./notification_service/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification -d notification"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Shared Redis for Caching
+  redis:
+    image: redis:latest
+    container_name: ecommerce_redis
+    ports:
+      - "6378:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Service-specific Redis instances (if needed for isolation)
+
+  # User Service Redis
+  user_redis:
+    image: redis:latest
+    container_name: user_redis
+    ports:
+      - "6380:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - user_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Product Service Redis
+  product_redis:
+    image: redis:latest
+    container_name: product_redis
+    ports:
+      - "6381:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - product_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Order Service Redis
+  order_redis:
+    image: redis:latest
+    container_name: order_redis
+    ports:
+      - "6382:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - order_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Notification Service Redis
+  notification_redis:
+    image: redis:latest
+    container_name: notification_redis
+    ports:
+      - "6383:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - notification_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecommerce-network
+
+  # Application Services
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api_gateway/docker/Dockerfile
+    container_name: api_gateway
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      USER_SERVICE_URL: http://user_service_nginx
+      USER_SERVICE_HEALTH: http://user_service_nginx/health
+      PRODUCT_SERVICE_URL: http://product_service_nginx
+      PRODUCT_SERVICE_HEALTH: http://product_service_nginx/health
+      ORDER_SERVICE_URL: http://order_service_nginx
+      ORDER_SERVICE_HEALTH: http://order_service_nginx/health
+      NOTIFICATION_SERVICE_URL: http://notification_service_nginx
+      NOTIFICATION_SERVICE_HEALTH: http://notification_service_nginx/health
+    depends_on:
+      - user_service_1
+      - product_service_1
+      - order_service_1
+      - notification_service_1
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+
+  # User Service Instances
+  user_service_1:
+    build:
+      context: .
+      dockerfile: user_service/docker/Dockerfile
+    container_name: user_service_1
+    ports:
+      - "8011:8001"
+    env_file:
+      - user_service/.env
+    environment:
+      SERVICE_NAME: user_service_1
+      USER_SERVICE_URL: http://user_service_1:8001
+      USER_SERVICE_HEALTH: http://user_service_1:8001/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://user:password@user_postgres:5432/user
+      REDIS_URL: redis://user_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      user_postgres:
+        condition: service_healthy
+      user_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  user_service_2:
+    build:
+      context: .
+      dockerfile: user_service/docker/Dockerfile
+    container_name: user_service_2
+    ports:
+      - "8012:8001"
+    env_file:
+      - user_service/.env
+    environment:
+      SERVICE_NAME: user_service_2
+      USER_SERVICE_URL: http://user_service_2:8001
+      USER_SERVICE_HEALTH: http://user_service_2:8001/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://user:password@user_postgres:5432/user
+      REDIS_URL: redis://user_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      user_postgres:
+        condition: service_healthy
+      user_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  user_service_3:
+    build:
+      context: .
+      dockerfile: user_service/docker/Dockerfile
+    container_name: user_service_3
+    ports:
+      - "8013:8001"
+    env_file:
+      - user_service/.env
+    environment:
+      SERVICE_NAME: user_service_3
+      USER_SERVICE_URL: http://user_service_3:8001
+      USER_SERVICE_HEALTH: http://user_service_3:8001/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://user:password@user_postgres:5432/user
+      REDIS_URL: redis://user_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      user_postgres:
+        condition: service_healthy
+      user_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  # User Service Nginx Load Balancer
+  user_service_nginx:
+    image: nginx:alpine
+    container_name: user_service_nginx
+    ports:
+      - "8010:80"
+    volumes:
+      - ./user_service/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./user_service/nginx/status.html:/usr/share/nginx/html/status.html:ro
+    depends_on:
+      - user_service_1
+      - user_service_2
+      - user_service_3
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1/nginx-health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Product Service Instances
+  product_service_1:
+    build:
+      context: .
+      dockerfile: product_service/docker/Dockerfile
+    container_name: product_service_1
+    ports:
+      - "8021:8002"
+    env_file:
+      - product_service/.env
+    environment:
+      SERVICE_NAME: product_service_1
+      PRODUCT_SERVICE_URL: http://product_service_1:8002
+      PRODUCT_SERVICE_HEALTH: http://product_service_1:8002/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://product:password@product_postgres:5432/product
+      REDIS_URL: redis://product_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      product_postgres:
+        condition: service_healthy
+      product_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  product_service_2:
+    build:
+      context: .
+      dockerfile: product_service/docker/Dockerfile
+    container_name: product_service_2
+    ports:
+      - "8022:8002"
+    env_file:
+      - product_service/.env
+    environment:
+      SERVICE_NAME: product_service_2
+      PRODUCT_SERVICE_URL: http://product_service_2:8002
+      PRODUCT_SERVICE_HEALTH: http://product_service_2:8002/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://product:password@product_postgres:5432/product
+      REDIS_URL: redis://product_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      product_postgres:
+        condition: service_healthy
+      product_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  product_service_3:
+    build:
+      context: .
+      dockerfile: product_service/docker/Dockerfile
+    container_name: product_service_3
+    ports:
+      - "8023:8002"
+    env_file:
+      - product_service/.env
+    environment:
+      SERVICE_NAME: product_service_3
+      PRODUCT_SERVICE_URL: http://product_service_3:8002
+      PRODUCT_SERVICE_HEALTH: http://product_service_3:8002/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://product:password@product_postgres:5432/product
+      REDIS_URL: redis://product_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      product_postgres:
+        condition: service_healthy
+      product_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  # Product Service Nginx Load Balancer
+  product_service_nginx:
+    image: nginx:alpine
+    container_name: product_service_nginx
+    ports:
+      - "8020:80"
+    volumes:
+      - ./product_service/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./product_service/nginx/status.html:/usr/share/nginx/html/status.html:ro
+    depends_on:
+      - product_service_1
+      - product_service_2
+      - product_service_3
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1/nginx-health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Order Service Instances
+  order_service_1:
+    build:
+      context: .
+      dockerfile: order_service/docker/Dockerfile
+    container_name: order_service_1
+    ports:
+      - "8031:8003"
+    env_file:
+      - order_service/.env
+    environment:
+      SERVICE_NAME: order_service_1
+      ORDER_SERVICE_URL: http://order_service_1:8003
+      ORDER_SERVICE_HEALTH: http://order_service_1:8003/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://order:password@order_postgres:5432/order
+      REDIS_URL: redis://order_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      order_postgres:
+        condition: service_healthy
+      order_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  order_service_2:
+    build:
+      context: .
+      dockerfile: order_service/docker/Dockerfile
+    container_name: order_service_2
+    ports:
+      - "8032:8003"
+    env_file:
+      - order_service/.env
+    environment:
+      SERVICE_NAME: order_service_2
+      ORDER_SERVICE_URL: http://order_service_2:8003
+      ORDER_SERVICE_HEALTH: http://order_service_2:8003/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://order:password@order_postgres:5432/order
+      REDIS_URL: redis://order_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      order_postgres:
+        condition: service_healthy
+      order_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  order_service_3:
+    build:
+      context: .
+      dockerfile: order_service/docker/Dockerfile
+    container_name: order_service_3
+    ports:
+      - "8033:8003"
+    env_file:
+      - order_service/.env
+    environment:
+      SERVICE_NAME: order_service_3
+      ORDER_SERVICE_URL: http://order_service_3:8003
+      ORDER_SERVICE_HEALTH: http://order_service_3:8003/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://order:password@order_postgres:5432/order
+      REDIS_URL: redis://order_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      order_postgres:
+        condition: service_healthy
+      order_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  # Order Service Nginx Load Balancer
+  order_service_nginx:
+    image: nginx:alpine
+    container_name: order_service_nginx
+    ports:
+      - "8030:80"
+    volumes:
+      - ./order_service/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./order_service/nginx/status.html:/usr/share/nginx/html/status.html:ro
+    depends_on:
+      - order_service_1
+      - order_service_2
+      - order_service_3
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1/nginx-health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Notification Service Instances
+  notification_service_1:
+    build:
+      context: .
+      dockerfile: notification_service/docker/Dockerfile
+    container_name: notification_service_1
+    ports:
+      - "8041:8000"
+    env_file:
+      - notification_service/.env
+    environment:
+      SERVICE_NAME: notification_service_1
+      NOTIFICATION_SERVICE_URL: http://notification_service_1:8000
+      NOTIFICATION_SERVICE_HEALTH: http://notification_service_1:8000/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://notification:password@notification_postgres:5432/notification
+      REDIS_URL: redis://notification_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      notification_postgres:
+        condition: service_healthy
+      notification_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  notification_service_2:
+    build:
+      context: .
+      dockerfile: notification_service/docker/Dockerfile
+    container_name: notification_service_2
+    ports:
+      - "8042:8000"
+    env_file:
+      - notification_service/.env
+    environment:
+      SERVICE_NAME: notification_service_2
+      NOTIFICATION_SERVICE_URL: http://notification_service_2:8000
+      NOTIFICATION_SERVICE_HEALTH: http://notification_service_2:8000/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://notification:password@notification_postgres:5432/notification
+      REDIS_URL: redis://notification_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      notification_postgres:
+        condition: service_healthy
+      notification_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  notification_service_3:
+    build:
+      context: .
+      dockerfile: notification_service/docker/Dockerfile
+    container_name: notification_service_3
+    ports:
+      - "8043:8000"
+    env_file:
+      - notification_service/.env
+    environment:
+      SERVICE_NAME: notification_service_3
+      NOTIFICATION_SERVICE_URL: http://notification_service_3:8000
+      NOTIFICATION_SERVICE_HEALTH: http://notification_service_3:8000/health
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+asyncpg://notification:password@notification_postgres:5432/notification
+      REDIS_URL: redis://notification_redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      notification_postgres:
+        condition: service_healthy
+      notification_redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  # Notification Service Nginx Load Balancer
+  notification_service_nginx:
+    image: nginx:alpine
+    container_name: notification_service_nginx
+    ports:
+      - "8040:80"
+    volumes:
+      - ./notification_service/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./notification_service/nginx/status.html:/usr/share/nginx/html/status.html:ro
+    depends_on:
+      - notification_service_1
+      - notification_service_2
+      - notification_service_3
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1/nginx-health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  # Database volumes
+  user_postgres_data:
+  product_postgres_data:
+  order_postgres_data:
+  notification_postgres_data:
+
+  # Redis volumes
+  redis_data:
+  user_redis_data:
+  product_redis_data:
+  order_redis_data:
+  notification_redis_data:
+
+networks:
+  ecommerce-network:
+    driver: bridge

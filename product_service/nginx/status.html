@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Product Service Status</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .status { color: green; font-weight: bold; }
+        h1 { color: #333; }
+    </style>
+</head>
+<body>
+    <h1>Product Service Load Balancer Status</h1>
+    <p>Status: <span class="status">Active</span></p>
+    <p>Load balancer is running and routing traffic to product service instances.</p>
+    <p>Last updated: <span id="timestamp"></span></p>
+
+    <script>
+        document.getElementById('timestamp').textContent = new Date().toLocaleString();
+    </script>
+</body>
+</html>

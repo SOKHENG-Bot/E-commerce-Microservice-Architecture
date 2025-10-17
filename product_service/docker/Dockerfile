@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first (so pip install can be cached)
-COPY requirements.txt ./product_service/requirements.txt
+COPY product_service/requirements.txt ./product_service/requirements.txt
 RUN pip install --no-cache-dir -r ./product_service/requirements.txt
 
 # Copy app code (this will change most often, so put last)
-COPY app ./product_service/app
+COPY product_service/app ./product_service/app
 
 # Copy root .env file
 COPY .env ./product_service/.env

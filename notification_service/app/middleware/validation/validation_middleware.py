@@ -109,8 +109,11 @@ class ValidationMiddleware(BaseHTTPMiddleware):
 
             # Read and validate request body if present
             if await self._has_request_body(request):
-                body = await self._read_request_body(request)
-                await self._validate_request_body(request, body)
+                content_type = request.headers.get("content-type", "")
+                # Skip body reading for multipart data as it consumes the stream
+                if "multipart/form-data" not in content_type:
+                    body = await self._read_request_body(request)
+                    await self._validate_request_body(request, body)
 
             # Log request if enabled
             if self.enable_logging:
@@ -211,7 +214,8 @@ class ValidationMiddleware(BaseHTTPMiddleware):
                 # Form data validation could be added here
                 pass
             elif "multipart/form-data" in content_type:
-                # File upload validation could be added here
+                # Skip body validation for multipart data (file uploads)
+                # as it consumes the stream and can't be restored properly
                 pass
 
         except json.JSONDecodeError:

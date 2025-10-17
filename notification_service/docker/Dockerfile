@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first (so pip install can be cached)
-COPY requirements.txt ./notification_service/requirements.txt
+COPY notification_service/requirements.txt ./notification_service/requirements.txt
 RUN pip install --no-cache-dir -r ./notification_service/requirements.txt
 
 # Copy app code (this will change most often, so put last)
-COPY app ./notification_service/app
+COPY notification_service/app ./notification_service/app
 
 # Create data directory for SQLite and set permissions
 RUN mkdir -p /app/data && chmod 777 /app/data

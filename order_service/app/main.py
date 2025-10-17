@@ -5,26 +5,29 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, List, Optional
 
-from app.api.v1.health import router as health_router
-from app.api.v1.orders import router as orders_router
-from app.core.database import database_manager
-from app.core.events import close_events, init_events
-from app.core.setting import get_settings
-from app.middleware.auth import (
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from order_service.app.api.v1.health import router as health_router
+from order_service.app.api.v1.orders import router as orders_router
+from order_service.app.core.database import database_manager
+from order_service.app.core.events import close_events, init_events
+from order_service.app.core.setting import get_settings
+from order_service.app.middleware.auth import (
     setup_order_auth_middleware,
     setup_order_role_authorization_middleware,
 )
-from app.middleware.error import setup_order_error_handling
-from app.middleware.security import setup_order_request_validation_middleware
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from order_service.app.middleware.error import setup_order_error_handling
+from order_service.app.middleware.security import (
+    setup_order_request_validation_middleware,
+)
 
 # Add the project root to the path so we can import shared modules
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    from app.utils.logging import setup_order_logging as setup_logging
+    from order_service.app.utils.logging import setup_order_logging as setup_logging
 except ImportError:
     # Fallback for when running from different contexts
     import logging
@@ -195,19 +198,19 @@ def create_app() -> FastAPI:
 
     # 1. Request Validation middleware (must come first)
     setup_order_request_validation_middleware(app)
-    logger.info("✅ Request validation middleware configured")
+    logger.info("Request validation middleware configured")
 
     # 2. Authentication middleware (must come before logging)
     setup_order_auth_middleware(app)
-    logger.info("✅ Authentication middleware configured")
+    logger.info("Authentication middleware configured")
 
     # 3. Role Authorization middleware (must come after auth)
     setup_order_role_authorization_middleware(app)
-    logger.info("✅ Role authorization middleware configured")
+    logger.info("Role authorization middleware configured")
 
     # 4. Error handling (must come after all middleware)
     setup_order_error_handling(app)
-    logger.info("✅ Error handling middleware configured")
+    logger.info("Error handling middleware configured")
 
     logger.info(
         "Configuring FastAPI application",

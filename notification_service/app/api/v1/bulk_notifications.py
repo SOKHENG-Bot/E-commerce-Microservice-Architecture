@@ -12,7 +12,7 @@ from ...utils.logging import setup_notification_logging
 
 logger = setup_notification_logging("bulk_notifications_api")
 
-router = APIRouter(prefix="/bulk-notifications", tags=["bulk-notifications"])
+router = APIRouter(tags=["Bulk Notifications"])
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)

@@ -24,6 +24,7 @@ class EmailVerificationHandler(EventHandler):
     async def handle(self, event: BaseEvent) -> None:
         """Handle email verification request event - send verification email"""
         try:
+            # Extract event data
             data = event.data
             user_id = data["user_id"]
             email = data["email"]
@@ -40,6 +41,7 @@ class EmailVerificationHandler(EventHandler):
                 "expires_in_minutes": expires_in_minutes,
             }
 
+            # Send email notification
             await self.notification_service.send_email_notification(
                 user_id=user_id,
                 template_name="email_verification",
@@ -62,8 +64,8 @@ class EmailVerificationHandler(EventHandler):
             raise
 
 
-class UserCreatedHandler(EventHandler):
-    """Handle user created events to send welcome notifications"""
+class EmailVerificationConfirmedHandler(EventHandler):
+    """Handle email verification confirmed events to send confirmation notifications"""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -71,28 +73,32 @@ class UserCreatedHandler(EventHandler):
         self.notification_service = NotificationService(session, self.event_producer)
 
     async def handle(self, event: BaseEvent) -> None:
-        """Handle user created event - send welcome notification"""
+        """Handle email verification confirmed event - send confirmation notification"""
         try:
+            # Extract event data
             data = event.data
             user_id = data["user_id"]
             email = data["email"]
-            first_name = data.get("first_name")
 
-            # Send welcome email notification
+            # create login link
+            login_url = "http://localhost:8010/api/v1/auth/login"
+
+            # Send email verification confirmation notification
             template_data: Dict[str, Any] = {
-                "user_name": first_name or "there",
                 "user_email": email,
+                "login_url": login_url,
             }
 
+            # Send email notification
             await self.notification_service.send_email_notification(
                 user_id=user_id,
-                template_name="welcome_email",
+                template_name="email_verification_confirm",
                 template_data=template_data,
                 recipient_email=email,
             )
 
             logger.info(
-                "Sent welcome notification for new user",
+                "Sent email verification confirmation notification",
                 extra={
                     "user_id": str(user_id),
                     "email": email,
@@ -102,7 +108,40 @@ class UserCreatedHandler(EventHandler):
                 },
             )
         except Exception as e:
-            logger.error(f"Failed to handle user created event: {e}")
+            logger.error(f"Failed to handle email verification confirmed event: {e}")
+            raise
+
+
+class UserLoginHandler(EventHandler):
+    """Handle user login events to send login notifications"""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.event_producer = get_event_producer()
+        self.notification_service = NotificationService(session, self.event_producer)
+
+    async def handle(self, event: BaseEvent) -> None:
+        """Handle user login events by sending welcome back email."""
+        try:
+            # Get user email from event
+            data = event.data
+            user_email = data["email"]
+            user_name = data.get("username") or "there"
+            user_id = data["user_id"]
+
+            # Send welcome back email
+            await self.notification_service.send_email_notification(
+                user_id=user_id,
+                recipient_email=user_email,
+                template_name="welcome_email",
+                template_data={
+                    "user_name": user_name,
+                    "user_email": user_email,
+                    "login_url": "http://localhost:8010/api/v1/auth/login",
+                },
+            )
+        except Exception as e:
+            logger.error(f"Failed to handle user login event: {e}")
             raise
 
 
@@ -223,7 +262,10 @@ class NotificationEventConsumer:
 
         # Register event handlers for different services
         email_verification_handler = EmailVerificationHandler(self.session)
-        user_created_handler = UserCreatedHandler(self.session)
+        email_verification_handler_confirmed_handler = (
+            EmailVerificationConfirmedHandler(self.session)
+        )
+        user_login_handler = UserLoginHandler(self.session)
         order_created_handler = OrderCreatedHandler(self.session)
         order_shipped_handler = OrderShippedHandler(self.session)
 
@@ -235,7 +277,15 @@ class NotificationEventConsumer:
         )
 
         await self.subscriber.subscribe(
-            topic="user.events", event_type="user.created", handler=user_created_handler
+            topic="user.events",
+            event_type="user.email_verification_confirmed",
+            handler=email_verification_handler_confirmed_handler,
+        )
+
+        await self.subscriber.subscribe(
+            topic="user.events",
+            event_type="user.logged_in",
+            handler=user_login_handler,
         )
 
         await self.subscriber.subscribe(
@@ -255,7 +305,8 @@ class NotificationEventConsumer:
             extra={
                 "subscriptions": [
                     "user.events:user.email_verification_requested",
-                    "user.events:user.created",
+                    "user.events:user.email_verification_confirmed",
+                    "user.events:user.logged_in",
                     "order.events:order.created",
                     "order.events:order.shipped",
                 ]

@@ -15,7 +15,7 @@ from ...utils.logging import setup_notification_logging
 # Setup enhanced logging
 logger = setup_notification_logging("notifications_api")
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter(tags=["Notifications"])
 
 
 @router.post("/send", status_code=status.HTTP_201_CREATED)

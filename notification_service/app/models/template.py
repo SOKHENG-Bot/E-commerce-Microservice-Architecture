@@ -12,7 +12,7 @@ class Template(NotificationServiceBaseModel):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     content_type: Mapped[str] = mapped_column(
-        String(50), nullable=False, default="text/plain"
+        String(50), nullable=False, default="text/html"
     )
     subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     body: Mapped[str] = mapped_column(TEXT, nullable=False)

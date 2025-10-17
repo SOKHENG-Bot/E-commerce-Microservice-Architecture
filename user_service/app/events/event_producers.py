@@ -10,14 +10,12 @@ from user_service.app.events.schemas.events import (
     USER_CREATED,
     USER_DELETED,
     USER_EMAIL_VERIFICATION_REQUESTED,
-    USER_EMAIL_VERIFIED,
     USER_UPDATED,
     ProfileCreatedEventData,
     ProfileUpdatedEventData,
     UserCreatedEventData,
     UserDeletedEventData,
     UserEmailVerificationRequestedEventData,
-    UserEmailVerifiedEventData,
     UserUpdatedEventData,
 )
 from user_service.app.models.user import User
@@ -37,10 +35,6 @@ class UserEventProducer:
     def __init__(self, event_publisher: KafkaEventPublisher):
         self.event_publisher = event_publisher
 
-    # ==============================================
-    # AUTHENTICATION EVENTS
-    # ==============================================
-
     async def publish_user_created(self, user: User) -> None:
         """Publish user creation event"""
         try:
@@ -57,14 +51,12 @@ class UserEventProducer:
                 phone_number=user.phone_number,
             )
 
-            # Create BaseEvent with our data
             event = BaseEvent(
                 event_type=USER_CREATED,
                 source_service="user-service",
                 data=event_data.to_dict(),
             )
 
-            # Publish using shared Kafka client
             await self.event_publisher.publish(event, topic="user.events")
             logger.info(
                 "Published user created event.",
@@ -75,37 +67,7 @@ class UserEventProducer:
             )
         except Exception as e:
             logger.error(f"Failed to publish user created event: {e}")
-            # Don't fail registration if event publishing fails
             pass
-
-    async def publish_verify_email(self, user: User):
-        """Publish email verification event"""
-        try:
-            # Create event data
-            event_data = UserEmailVerifiedEventData(
-                user_id=user.id,
-                email=user.email,
-                verified_at=datetime.now(timezone.utc),
-            )
-
-            # Create BaseEvent
-            event = BaseEvent(
-                event_type=USER_EMAIL_VERIFIED,
-                source_service="user-service",
-                data=event_data.to_dict(),
-            )
-
-            await self.event_publisher.publish(event, topic="user.events")
-            logger.info(
-                "Published verify email event.",
-                extra={
-                    "user_id": str(user.id),
-                    "email": user.email,
-                },
-            )
-        except Exception as e:
-            logger.error(f"Failed to publish verify email event: {e}")
-            raise
 
     async def publish_email_verification_request(
         self,
@@ -115,7 +77,6 @@ class UserEventProducer:
     ) -> None:
         """Publish email verification request event"""
         try:
-            # Create event data
             event_data = UserEmailVerificationRequestedEventData(
                 user_id=user.id,
                 email=user.email,
@@ -124,7 +85,6 @@ class UserEventProducer:
                 requested_at=datetime.now(timezone.utc),
             )
 
-            # Create BaseEvent
             event = BaseEvent(
                 event_type=USER_EMAIL_VERIFICATION_REQUESTED,
                 source_service="user-service",
@@ -143,15 +103,13 @@ class UserEventProducer:
             logger.error(f"Failed to publish email verification request event: {e}")
             raise
 
-    async def publish_password_reset_request(
+    async def publish_confirm_email_verification(
         self,
         user: User,
-        reset_token: str,
         correlation_id: Optional[int] = None,
     ) -> None:
-        """Publish password reset request event"""
+        """Publish email verification confirmation event"""
         try:
-            # Create event data
             event_data = UserUpdatedEventData(
                 user_id=user.id,
                 email=user.email,
@@ -161,7 +119,45 @@ class UserEventProducer:
                 updated_at=user.updated_at,
             )
 
-            # Create BaseEvent for password reset request
+            event = BaseEvent(
+                event_type="user.email_verification_confirmed",
+                source_service="user-service",
+                correlation_id=correlation_id,
+                data=event_data.to_dict(),
+            )
+
+            event.data.update(
+                {
+                    "verified_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+
+            await self.event_publisher.publish(event, topic="user.events")
+            logger.info(
+                "Published email verification confirm event.",
+                extra={"user_id": str(user.id), "email": user.email},
+            )
+        except Exception as e:
+            logger.error(f"Failed to publish email verification confirm event: {e}")
+            raise
+
+    async def publish_password_reset_request(
+        self,
+        user: User,
+        reset_token: str,
+        correlation_id: Optional[int] = None,
+    ) -> None:
+        """Publish password reset request event"""
+        try:
+            event_data = UserUpdatedEventData(
+                user_id=user.id,
+                email=user.email,
+                username=user.username or "",
+                is_active=user.is_active,
+                created_at=user.created_at,
+                updated_at=user.updated_at,
+            )
+
             event = BaseEvent(
                 event_type="user.password_reset_requested",
                 source_service="user-service",
@@ -169,7 +165,6 @@ class UserEventProducer:
                 data=event_data.to_dict(),
             )
 
-            # Add additional password reset data
             event.data.update(
                 {
                     "reset_token": reset_token,

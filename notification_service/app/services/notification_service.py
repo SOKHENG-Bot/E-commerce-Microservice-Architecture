@@ -57,7 +57,7 @@ class NotificationService:
                 rendered_subject = subject
                 rendered_body = content
                 template = None
-                content_type = "text/plain"  # Default
+                content_type = "text/html"  # Default
             else:
                 # Template mode
                 template = await self.template_repository.get_by_name(template_name)

@@ -152,12 +152,27 @@ class AuthService:
                 token_data, expires_delta=timedelta(minutes=5)
             )  # 5 minutes for email verification
 
+            # Publish user created event
             if self.event_publisher:
                 try:
                     await self.event_publisher.publish_user_created(new_user)
+                    logger.info(
+                        "User created event published successfully",
+                        extra={
+                            "user_id": str(new_user.id),
+                            "email": new_user.email,
+                        },
+                    )
                 except Exception as e:
-                    logger.warning(f"Failed to publish user created event: {e}")
-                    # Don't fail registration if event publishing fails
+                    logger.error(
+                        f"Failed to publish user created event: {e}",
+                        extra={
+                            "user_id": str(new_user.id),
+                            "email": new_user.email,
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                        },
+                    )
             logger.info(
                 "User created event published, now checking email verification",
                 extra={
@@ -177,23 +192,8 @@ class AuthService:
             )
 
             # Publish email verification request event
-            logger.info(
-                "Checking event publisher availability",
-                extra={
-                    "user_id": str(new_user.id),
-                    "email": new_user.email,
-                    "event_publisher_exists": self.event_publisher is not None,
-                },
-            )
             if self.event_publisher:
                 try:
-                    logger.info(
-                        "Attempting to publish email verification request event",
-                        extra={
-                            "user_id": str(new_user.id),
-                            "email": new_user.email,
-                        },
-                    )
                     await self.event_publisher.publish_email_verification_request(
                         user=new_user,
                         verification_token=verify_token,
@@ -216,7 +216,6 @@ class AuthService:
                             "error_type": type(e).__name__,
                         },
                     )
-                    # Don't fail registration if event publishing fails
             else:
                 logger.warning(
                     "Event publisher is None - email verification event not published",
@@ -282,8 +281,43 @@ class AuthService:
                 return True
             user.is_verified = True
             await self.user_repository.update(user)
+
+            # Publish email verification confirmation event
             if self.event_publisher:
-                await self.event_publisher.publish_verify_email(user)
+                try:
+                    await self.event_publisher.publish_confirm_email_verification(user)
+                    logger.info(
+                        "Email verification confirmation event published successfully",
+                        extra={
+                            "user_id": str(user.id),
+                            "email": user.email,
+                        },
+                    )
+                    logger.info(
+                        "User email verified successfully.",
+                        extra={
+                            "user_id": str(user.id),
+                            "email": user.email,
+                        },
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to publish email verification confirmation event: {e}",
+                        extra={
+                            "user_id": str(user.id),
+                            "email": user.email,
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                        },
+                    )
+            else:
+                logger.warning(
+                    "Event publisher is None - email verification confirmation event not published",
+                    extra={
+                        "user_id": str(user.id),
+                        "email": user.email,
+                    },
+                )
             logger.info(
                 "User email verified successfully.",
                 extra={
@@ -291,6 +325,7 @@ class AuthService:
                     "email": user.email,
                 },
             )
+
             return True
         except HTTPException:
             raise
@@ -322,12 +357,6 @@ class AuthService:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="User account is inactive.",
                 )
-            # Temporarily skip email verification for testing
-            # if not user.is_verified:
-            #     raise HTTPException(
-            #         status_code=status.HTTP_403_FORBIDDEN,
-            #         detail="Email is not verified.",
-            #     )
             # Update last login timestamp
             user.last_login = datetime.now(timezone.utc)
             await self.user_repository.update(user)
