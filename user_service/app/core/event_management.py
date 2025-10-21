@@ -1,8 +1,3 @@
-"""
-User Service Event Management
-Initializes and manages Kafka event publishing for the user service.
-"""
-
 from typing import Optional
 
 from user_service.app.events.base.kafka_client import KafkaEventPublisher
@@ -21,6 +16,7 @@ _user_event_producer: Optional[UserEventProducer] = None
 
 async def init_events() -> None:
     """Initialize event publishing infrastructure"""
+
     global _kafka_publisher, _user_event_producer
 
     try:
@@ -77,6 +73,7 @@ async def init_events() -> None:
 
 async def close_events() -> None:
     """Close event publishing infrastructure"""
+
     global _kafka_publisher, _user_event_producer
 
     try:
@@ -115,16 +112,19 @@ async def close_events() -> None:
 
 def get_event_producer() -> Optional[UserEventProducer]:
     """Get the user event producer instance"""
+
     return _user_event_producer
 
 
 def get_user_event_producer() -> Optional[UserEventProducer]:
     """Get the user event producer instance (alias for compatibility)"""
+
     return _user_event_producer
 
 
 async def health_check_events() -> bool:
     """Check if event publishing is healthy"""
+
     if _kafka_publisher:
         is_healthy = await _kafka_publisher.health_check()
         logger.debug(

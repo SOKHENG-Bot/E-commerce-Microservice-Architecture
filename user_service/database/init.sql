@@ -147,4 +147,4 @@ CREATE TRIGGER trigger_role_permissions BEFORE UPDATE ON role_permissions FOR EA
 -- DONE
 -- ==============================================
 
-SELECT '✅ User Service Database ready!' as status;
+SELECT 'User Service Database ready!' as status;

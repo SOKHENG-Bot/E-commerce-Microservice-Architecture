@@ -1,8 +1,3 @@
-"""
-User Service Permission and Role Enums
-Other services should access permissions via API endpoints, not direct imports.
-"""
-
 from enum import Enum
 
 

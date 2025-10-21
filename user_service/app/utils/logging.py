@@ -1,10 +1,3 @@
-"""
-User Service Independent Logging Module
-====================================
-Self-contained logging setup for User Service.
-No external dependencies on shared modules.
-"""
-
 import json
 import logging
 import sys
@@ -21,7 +14,8 @@ class UserJSONFormatter(logging.Formatter):
         self.exclude_fields = exclude_fields or []
 
     def format(self, record: logging.LogRecord) -> str:
-        # Create log entry with standard fields
+        """Format log record as JSON string"""
+
         log_entry = {
             "timestamp": self.formatTime(record),
             "level": record.levelname,
@@ -79,12 +73,7 @@ def setup_user_logging(
     exclude_fields: Optional[List[str]] = None,
     enable_performance_logging: bool = True,
 ) -> logging.Logger:
-    """
-    Setup independent logging for User Service
-
-    Returns:
-        Configured logger instance
-    """
+    """Set up structured logging for the User Service"""
 
     # Create logger
     logger = logging.getLogger(service_name)
@@ -150,6 +139,7 @@ default_user_logger = None
 
 def get_default_user_logger() -> logging.Logger:
     """Get the default User Service logger instance"""
+
     global default_user_logger
     if default_user_logger is None:
         default_user_logger = setup_user_logging()

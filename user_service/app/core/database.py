@@ -61,7 +61,6 @@ class UserServiceDatabaseManager:
                     "pool_reset_on_return": "commit",
                     "connect_args": {
                         "command_timeout": 30,
-                        # Disable prepared statements to avoid shared_preload_libraries requirement
                         "prepared_statement_cache_size": 0,
                     },
                 }
@@ -98,6 +97,7 @@ class UserServiceDatabaseManager:
 
     async def create_tables(self) -> None:
         """Create all User Service database tables."""
+
         try:
             async with self.async_engine.begin() as conn:
                 await conn.run_sync(
@@ -112,7 +112,6 @@ class UserServiceDatabaseManager:
                 },
             )
         except Exception as e:
-            # Log the error but don't fail - tables might already exist from another instance
             logger.warning(
                 "Database table creation failed",
                 extra={
@@ -126,11 +125,13 @@ class UserServiceDatabaseManager:
 
     async def get_async_session(self) -> AsyncGenerator[AsyncSession, None]:
         """Get async database session for User Service."""
+
         async with self.async_session_maker() as session:
             yield session
 
     async def close(self) -> None:
         """Properly close the User Service database engine and connections."""
+
         logger.info(
             "Closing User Service database connections",
             extra={

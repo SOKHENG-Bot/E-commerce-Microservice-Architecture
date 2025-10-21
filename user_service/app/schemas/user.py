@@ -3,136 +3,199 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from user_service.app.schemas.address import AddressResponse
-from user_service.app.schemas.profile import ProfileResponse
+from user_service.app.models.address import AddressTypeEnum
+
+# --------------------------------------------------------------
+# Authentication Schemas
+# --------------------------------------------------------------
 
 
-class UserBase(BaseModel):
-    email: EmailStr
+class UserRegistrationRequest(BaseModel):
+    email: EmailStr = Field(..., examples=["user@example.com"])
+    password: str = Field(
+        ..., min_length=8, max_length=128, examples=["strongpassword123"]
+    )
 
 
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, max_length=128)
-
-    # @field_validator("password")
-    # def validate_password(cls, value: str) -> str:
-    #     if len(value) < 8:
-    #         raise ValueError("Password must be at least 8 characters long")
-    #     if not any(char.isupper() for char in value):
-    #         raise ValueError("Password must contain at least one uppercase letter")
-    #     if not any(char.islower() for char in value):
-    #         raise ValueError("Password must contain at least one lowercase letter")
-    #     if not any(char.isdigit() for char in value):
-    #         raise ValueError("Password must contain at least one digit")
-    #     return value
-
-
-class UserUpdate(BaseModel):
-    username: Optional[str] = Field(None, min_length=3, max_length=50)
-    phone: Optional[str] = Field(None, min_length=10, max_length=15)
-
-
-class PermissionResponse(BaseModel):
-    name: str
-    description: Optional[str] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class RoleResponse(BaseModel):
-    name: str
-    description: Optional[str] = None
-    permissions: Optional[list[PermissionResponse]] = []
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class UserLoginResponse(UserBase):
-    id: int
-    is_active: bool
-    is_verified: bool
-    date_joined: datetime
-    last_login: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class UserResponse(UserBase):
-    id: int
-    is_active: bool
-    is_verified: bool
-    date_joined: datetime
-    last_login: Optional[datetime] = None
-    profile: Optional[ProfileResponse] = None
-    addresses: Optional[list[AddressResponse]] = []
-    roles: Optional[list[RoleResponse]] = []
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-# Request/Response Models
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int
-
-
-class VerificationResponse(BaseModel):
-    verified: bool
-    message: str = ""
-
-
-class ValidationResponse(BaseModel):
-    valid: bool
-    message: str = ""
-
-
-class PasswordValidationRequest(BaseModel):
-    password: str = Field(..., min_length=1, description="Password to validate")
-
-
-class MessageResponse(BaseModel):
+class UserRegistrationResponse(BaseModel):
     message: str
 
-
-class HealthResponse(BaseModel):
-    status: str
-    service: str
-    version: str
-    timestamp: str
-    uptime_seconds: float
-    database: Dict[str, Any] = {}
+    model_config = ConfigDict(from_attributes=True)
 
 
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str = Field(
-        ..., description="Refresh token for generating new access token"
+class UserVerificationRequest(BaseModel):
+    verify_token: str = Field(..., examples=["verification_token_123"])
+
+
+class UserVerificationResponse(BaseModel):
+    verified: bool
+    message: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserLoginRequest(BaseModel):
+    email: EmailStr = Field(..., examples=["user@example.com"])
+    password: str = Field(..., examples=["strongpassword123"])
+
+
+class UserLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserForgotPasswordRequest(BaseModel):
+    email: EmailStr = Field(..., examples=["user@example.com"])
+
+
+class UserForgotPasswordResponse(BaseModel):
+    message: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserResetPasswordRequest(BaseModel):
+    email: EmailStr = Field(..., examples=["user@example.com"])
+    new_password: str = Field(
+        ..., min_length=8, max_length=128, examples=["strongpassword123"]
     )
 
 
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+class UserResetPasswordResponse(BaseModel):
+    message: str
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-# Request/Response Models
-class DeactivationRequest(BaseModel):
-    reason: Optional[str] = Field(
-        default=None, description="Optional reason for account deactivation"
+class UserChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., examples=["currentpassword123"])
+    new_password: str = Field(
+        ..., min_length=8, max_length=128, examples=["strongpassword123"]
     )
 
 
-class ReactivationRequest(BaseModel):
-    email: str = Field(..., description="Email address of account to reactivate")
+class UserChangePasswordResponse(BaseModel):
+    message: str
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-class AccountInfoResponse(BaseModel):
-    """Comprehensive account information response"""
+class UserLogoutResponse(BaseModel):
+    message: str
 
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserRefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(..., examples=["refresh_token_123"])
+
+
+class UserRefreshTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --------------------------------------------------------------
+# Profile Schemas
+# --------------------------------------------------------------
+
+
+class ProfileUpdateRequest(BaseModel):
+    date_of_birth: Optional[datetime] = None
+    gender: Optional[str] = None
+    bio: Optional[str] = None
+    preferences: Optional[dict[str, Any]] = {}
+
+
+class ProfileResponse(BaseModel):
+    id: int
+    user_id: int
+    avatar_url: Optional[str] = None
+    date_of_birth: Optional[datetime] = None
+    gender: Optional[str] = None
+    bio: Optional[str] = None
+    preferences: Optional[dict[str, Any]] = {}
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserGetProfileResponse(BaseModel):
+    profile: ProfileResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserUpdateProfileRequest(BaseModel):
+    profile: ProfileUpdateRequest
+
+
+class UserUpdateProfileResponse(BaseModel):
+    profile: ProfileResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --------------------------------------------------------------
+# Address Schemas
+# --------------------------------------------------------------
+class AddressUpdateRequest(BaseModel):
+    street: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    country: Optional[str] = None
+    is_primary: Optional[bool] = None
+    is_default: Optional[bool] = None
+    type: Optional[AddressTypeEnum] = None
+
+
+class AddressResponse(BaseModel):
+    id: int
+    user_id: int
+    street: str
+    city: str
+    state: str
+    zip_code: str
+    country: str
+    is_primary: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserGetAddressesResponse(BaseModel):
+    addresses: AddressResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserUpdateAddressesRequest(BaseModel):
+    address: AddressUpdateRequest
+
+
+class UserUpdateAddressesResponse(BaseModel):
+    address: AddressResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --------------------------------------------------------------
+# User Management Schemas
+# --------------------------------------------------------------
+
+
+class CurrentUserRequest(BaseModel):
+    user_id: int
+
+
+class UserGetAccountInfoResponse(BaseModel):
     user_id: str
     email: str
     is_active: bool
@@ -150,45 +213,29 @@ class AccountInfoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class LoginResponse(BaseModel):
-    verify_token: str
-    token_type: str = "bearer"
-    expires_in: int
-    user: UserResponse
+class UserUpdateAccountInfoRequest(BaseModel):
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class UserUpdateAccountInfoResponse(BaseModel):
+    message: str
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class PasswordChangeRequest(BaseModel):
-    current_password: str
-    new_password: str = Field(..., min_length=8, max_length=128)
+# --------------------------------------------------------------
+# Health Schemas
+# --------------------------------------------------------------
 
 
-class PasswordResetRequest(BaseModel):
-    email: EmailStr
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    version: str
+    timestamp: str
+    uptime_seconds: float
+    database: Dict[str, Any] = {}
 
-
-class PasswordResetConfirm(BaseModel):
-    email: EmailStr
-    new_password: str = Field(..., min_length=8, max_length=128)
-
-
-class PermissionCheckResponse(BaseModel):
-    user_id: int
-    permission: str
-    has_permission: bool
-
-
-class UserPermissionsResponse(BaseModel):
-    user_id: int
-    permissions: list[str]
-
-
-class UserRolesResponse(BaseModel):
-    user_id: int
-    roles: list[str]
-
-
-class AvailablePermissionsResponse(BaseModel):
-    permissions: list[str]
-    roles: list[str]
+    model_config = ConfigDict(from_attributes=True)

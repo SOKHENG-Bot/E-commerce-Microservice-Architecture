@@ -1,11 +1,3 @@
-"""
-Password Security Utilities
-==========================
-
-Provides secure password hashing and verification using bcrypt.
-This module handles all password-related security operations for the User Service.
-"""
-
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

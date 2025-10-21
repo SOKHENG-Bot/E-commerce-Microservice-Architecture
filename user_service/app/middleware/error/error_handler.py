@@ -1,9 +1,3 @@
-"""
-Error handling middleware for User Service.
-Provides centralized exception handling and standardized error responses.
-"""
-
-import logging
 import traceback
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -14,47 +8,24 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-# Setup logger
-try:
-    from user_service.app.utils.logging import setup_user_logging
+from user_service.app.utils.logging import setup_user_logging
 
-    logger = setup_user_logging("user_service_error_handler")
-except ImportError:
-    logger = logging.getLogger("user_service_error_handler")
-    logger.setLevel(logging.INFO)
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+logger = setup_user_logging("user_service_error_handler")
 
 
 class UserServiceErrorHandler:
-    """
-    Centralized error handling for User Service.
-
-    Features:
-    - Standardized error response format
-    - Exception type classification
-    - Correlation ID tracking
-    - Detailed error logging
-    - Graceful error responses
-    - User-specific error handling
-    """
+    """Class to setup error handling middleware for the User Service."""
 
     @staticmethod
     def setup_error_handlers(app: FastAPI) -> None:
-        """
-        Setup all error handlers for the FastAPI application.
-        """
+        """Setup error handlers for the FastAPI application."""
 
         @app.exception_handler(StarletteHTTPException)
-        async def http_exception_handler(
+        async def http_exception_handler(  # type: ignore
             request: Request, exc: StarletteHTTPException
         ) -> JSONResponse:
-            """Handle HTTP exceptions from Starlette/FastAPI."""
+            """Handle HTTP exceptions."""
+
             return UserServiceErrorHandler._create_error_response(
                 request=request,
                 status_code=exc.status_code,
@@ -64,11 +35,12 @@ class UserServiceErrorHandler:
             )
 
         @app.exception_handler(RequestValidationError)
-        async def validation_exception_handler(
+        async def validation_exception_handler(  # type: ignore
             request: Request, exc: RequestValidationError
         ) -> JSONResponse:
-            """Handle Pydantic validation errors."""
-            error_details = []
+            """Handle request validation errors."""
+
+            error_details: list[dict[str, str]] = []
             for error in exc.errors():
                 error_details.append(
                     {
@@ -91,11 +63,12 @@ class UserServiceErrorHandler:
             )
 
         @app.exception_handler(ValidationError)
-        async def pydantic_validation_exception_handler(
+        async def pydantic_validation_exception_handler(  # type: ignore
             request: Request, exc: ValidationError
         ) -> JSONResponse:
-            """Handle Pydantic validation errors in business logic."""
-            error_details = []
+            """Handle Pydantic validation errors."""
+
+            error_details: list[dict[str, str]] = []
             for error in exc.errors():
                 error_details.append(
                     {
@@ -114,10 +87,11 @@ class UserServiceErrorHandler:
             )
 
         @app.exception_handler(ValueError)
-        async def value_error_handler(
+        async def value_error_handler(  # type: ignore
             request: Request, exc: ValueError
         ) -> JSONResponse:
-            """Handle ValueError exceptions."""
+            """Handle value errors."""
+
             return UserServiceErrorHandler._create_error_response(
                 request=request,
                 status_code=400,
@@ -127,10 +101,11 @@ class UserServiceErrorHandler:
             )
 
         @app.exception_handler(PermissionError)
-        async def permission_error_handler(
+        async def permission_error_handler(  # type: ignore
             request: Request, exc: PermissionError
         ) -> JSONResponse:
-            """Handle permission-related errors."""
+            """Handle permission denied errors."""
+
             return UserServiceErrorHandler._create_error_response(
                 request=request,
                 status_code=403,
@@ -140,11 +115,11 @@ class UserServiceErrorHandler:
             )
 
         @app.exception_handler(Exception)
-        async def general_exception_handler(
+        async def general_exception_handler(  # type: ignore
             request: Request, exc: Exception
         ) -> JSONResponse:
-            """Handle all other exceptions as internal server errors."""
-            # Log the full traceback for debugging
+            """Handle all uncaught exceptions."""
+
             logger.error(
                 "Unhandled exception occurred",
                 extra={
@@ -179,23 +154,12 @@ class UserServiceErrorHandler:
         message: str,
         details: Optional[Dict[str, Any]] = None,
     ) -> JSONResponse:
-        """
-        Create a standardized error response.
+        """Create a standardized error response."""
 
-        Args:
-            request: The FastAPI request object
-            status_code: HTTP status code
-            error_type: Type of error for categorization
-            message: Human-readable error message
-            details: Additional error details
-
-        Returns:
-            JSONResponse with standardized error format
-        """
         correlation_id = getattr(request.state, "correlation_id", "unknown")
         user_id = getattr(request.state, "user_id", "anonymous")
 
-        error_response = {
+        error_response: Dict[str, Any] = {
             "error": {
                 "type": error_type,
                 "message": message,
@@ -210,7 +174,6 @@ class UserServiceErrorHandler:
         if details:
             error_response["error"]["details"] = details
 
-        # Log the error response (except for 5xx errors which are already logged above)
         if status_code < 500:
             logger.warning(
                 f"Client error: {error_type}",
@@ -230,12 +193,8 @@ class UserServiceErrorHandler:
 
 
 def setup_user_error_handling(app: FastAPI) -> None:
-    """
-    Convenience function to setup error handling for User Service.
+    """Setup error handling middleware for the User Service."""
 
-    Args:
-        app: FastAPI application instance
-    """
     error_handler = UserServiceErrorHandler()
     error_handler.setup_error_handlers(app)
 

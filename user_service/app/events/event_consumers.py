@@ -1,11 +1,3 @@
-"""
-User Service Event Consumers
-===========================
-
-Handles incoming events from other microservices using local event infrastructure.
-Processes events to update user statistics, engagement metrics, and cross-service data.
-"""
-
 from datetime import datetime, timezone
 from typing import Any, Dict
 from uuid import UUID
@@ -31,13 +23,12 @@ class OrderCreatedHandler(EventHandler):
 
     async def handle(self, event: BaseEvent) -> None:
         """Handle order created event - update user statistics"""
+
         try:
-            # Event data comes from shared OrderCreatedEvent schema
             data = event.data
             user_id = UUID(data["user_id"])
             order_total = float(data["total_amount"])
 
-            # Update user order statistics
             await self._update_user_order_statistics(
                 user_id,
                 {
@@ -66,8 +57,7 @@ class OrderCreatedHandler(EventHandler):
         self, user_id: UUID, order_data: Dict[str, Any]
     ):
         """Update user order statistics"""
-        # This would update user statistics in database
-        # For now, just log the update
+
         logger.info(
             "User order statistics updated",
             extra={"user_id": str(user_id), "order_data": order_data},
@@ -83,14 +73,14 @@ class NotificationSentHandler(EventHandler):
 
     async def handle(self, event: BaseEvent) -> None:
         """Handle notification sent event - update user engagement"""
+
         try:
             data = event.data
-            user_id = data["user_id"]  # user_id is an integer, not UUID
+            user_id = data["user_id"]
             notification_type = data.get("notification_type", "unknown")
             channel = data.get("channel", "email")
             status = data.get("status", "sent")
 
-            # Update user notification preferences and engagement
             await self._update_user_notification_engagement(
                 user_id,
                 {
@@ -122,6 +112,7 @@ class NotificationSentHandler(EventHandler):
         self, user_id: int, notification_data: Dict[str, Any]
     ):
         """Update user notification engagement metrics"""
+
         logger.info(
             "User notification engagement updated",
             extra={"user_id": str(user_id), "notification_data": notification_data},
@@ -137,6 +128,7 @@ class PaymentProcessedHandler(EventHandler):
 
     async def handle(self, event: BaseEvent) -> None:
         """Handle payment processed event - update user payment statistics"""
+
         try:
             data = event.data
             user_id = UUID(data["user_id"])
@@ -144,7 +136,6 @@ class PaymentProcessedHandler(EventHandler):
             payment_method = data.get("payment_method", "unknown")
             payment_status = data.get("status", "completed")
 
-            # Update user payment statistics
             await self._update_user_payment_statistics(
                 user_id,
                 {
@@ -177,6 +168,7 @@ class PaymentProcessedHandler(EventHandler):
         self, user_id: UUID, payment_data: Dict[str, Any]
     ):
         """Update user payment statistics and preferences"""
+
         logger.info(
             "User payment statistics updated",
             extra={"user_id": str(user_id), "payment_data": payment_data},
@@ -192,13 +184,13 @@ class ReviewCreatedHandler(EventHandler):
 
     async def handle(self, event: BaseEvent) -> None:
         """Handle review created event - update user reputation score"""
+
         try:
             data = event.data
             user_id = UUID(data["user_id"])
             rating = int(data.get("rating", 0))
             product_id = data.get("product_id")
 
-            # Update user review statistics
             await self._update_user_review_reputation(
                 user_id,
                 {
@@ -229,6 +221,7 @@ class ReviewCreatedHandler(EventHandler):
         self, user_id: UUID, review_data: Dict[str, Any]
     ):
         """Update user review reputation and engagement"""
+
         logger.info(
             "User reputation updated",
             extra={"user_id": str(user_id), "review_data": review_data},
@@ -244,13 +237,13 @@ class UserActivityHandler(EventHandler):
 
     async def handle(self, event: BaseEvent) -> None:
         """Handle user activity event - update user engagement metrics"""
+
         try:
             data = event.data
             user_id = UUID(data["user_id"])
             activity_type = data.get("activity_type", "unknown")
             session_id = data.get("session_id")
 
-            # Update user activity tracking
             await self._update_user_activity_tracking(
                 user_id,
                 {
@@ -282,6 +275,7 @@ class UserActivityHandler(EventHandler):
         self, user_id: UUID, activity_data: Dict[str, Any]
     ):
         """Update user activity and engagement metrics"""
+
         logger.info(
             "User activity metrics updated",
             extra={"user_id": str(user_id), "activity_data": activity_data},
@@ -302,6 +296,7 @@ class UserEventConsumer:
 
     async def start(self):
         """Start consuming events using shared subscriber"""
+
         await self.subscriber.start()
 
         # Register event handlers for different services

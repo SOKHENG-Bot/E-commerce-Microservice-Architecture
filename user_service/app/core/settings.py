@@ -1,7 +1,3 @@
-"""
-User Service configuration using shared patterns
-"""
-
 from pathlib import Path
 from typing import List
 

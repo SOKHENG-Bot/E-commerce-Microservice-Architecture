@@ -27,18 +27,15 @@ logger = setup_logging("user-producer-events", log_level=settings.LOG_LEVEL)
 
 
 class UserEventProducer:
-    """
-    User service event producer using new BaseEvent pattern with proper schemas.
-    All methods now use the corrected event creation pattern.
-    """
+    """Produces user-related events to Kafka topics."""
 
     def __init__(self, event_publisher: KafkaEventPublisher):
         self.event_publisher = event_publisher
 
     async def publish_user_created(self, user: User) -> None:
         """Publish user creation event"""
+
         try:
-            # Create event data using our schema
             event_data = UserCreatedEventData(
                 user_id=user.id,
                 email=user.email,
@@ -76,6 +73,7 @@ class UserEventProducer:
         expires_in_minutes: int,
     ) -> None:
         """Publish email verification request event"""
+
         try:
             event_data = UserEmailVerificationRequestedEventData(
                 user_id=user.id,
@@ -109,6 +107,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish email verification confirmation event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -148,6 +147,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish password reset request event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -187,6 +187,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish password reset confirmation event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -225,6 +226,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish user logout event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -261,6 +263,7 @@ class UserEventProducer:
         self, user: User, login_ip: str, correlation_id: Optional[int] = None
     ) -> None:
         """Publish user login event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -309,6 +312,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish user deactivation event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -348,6 +352,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish user reactivation event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -390,6 +395,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish profile creation event"""
+
         try:
             event_data = ProfileCreatedEventData(
                 profile_id=profile_data["id"],
@@ -425,6 +431,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish profile update event"""
+
         try:
             event_data = ProfileUpdatedEventData(
                 profile_id=profile_data["id"],
@@ -461,6 +468,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish avatar update event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -505,6 +513,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish address creation event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -546,6 +555,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish address update event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -587,6 +597,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish address deletion event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -627,6 +638,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish default address change event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -674,6 +686,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish general user update event"""
+
         try:
             event_data = UserUpdatedEventData(
                 user_id=user.id,
@@ -718,6 +731,7 @@ class UserEventProducer:
         correlation_id: Optional[int] = None,
     ) -> None:
         """Publish user deletion event"""
+
         try:
             # Create event data
             event_data = UserDeletedEventData(

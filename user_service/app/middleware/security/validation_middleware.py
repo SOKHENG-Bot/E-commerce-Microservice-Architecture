@@ -1,50 +1,22 @@
-"""
-Request/Response validation middleware for User Service.
-Handles input validation, sanitization, and security checks at middleware level.
-"""
-
 import json
-import logging
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# Setup logger
-try:
-    from user_service.app.utils.logging import setup_user_logging
+from user_service.app.utils.logging import setup_user_logging
 
-    logger = setup_user_logging("user_service_validation")
-except ImportError:
-    logger = logging.getLogger("user_service_validation")
-    logger.setLevel(logging.INFO)
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+logger = setup_user_logging("user_service_validation")
 
 
 class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
-    """
-    Comprehensive request validation middleware for User Service.
-
-    Features:
-    - Request size limits with user-specific limits
-    - Content type validation
-    - Request body validation and sanitization
-    - Security header validation
-    - User service specific path handling
-    - Request logging and monitoring
-    - Correlation ID integration
-    """
+    """Middleware to validate incoming requests for the User Service."""
 
     def __init__(
         self,
         app: Any,
-        max_request_size: int = 10 * 1024 * 1024,  # 10MB default
+        max_request_size: int = 10 * 1024 * 1024,
         allowed_content_types: Optional[List[str]] = None,
         required_headers: Optional[List[str]] = None,
         blocked_paths: Optional[List[str]] = None,
@@ -70,61 +42,50 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
             "/api/v1/auth/register",
             "/api/v1/auth/refresh",
         ]
-
-        # User Service specific size limits
         self.path_size_limits = {
-            "/api/v1/users/avatar": 5 * 1024 * 1024,  # 5MB for avatar uploads
-            "/api/v1/profiles/avatar": 5 * 1024 * 1024,  # 5MB for profile images
-            "/api/v1/users": 1 * 1024 * 1024,  # 1MB for user creation
-            "/api/v1/profiles": 1 * 1024 * 1024,  # 1MB for profile updates
-            "/api/v1/auth/register": 100 * 1024,  # 100KB for registration
-            "/api/v1/auth/login": 50 * 1024,  # 50KB for login
-            "/api/v1/addresses": 500 * 1024,  # 500KB for address operations
-            "/api/v1/bulk": 2 * 1024 * 1024,  # 2MB for bulk operations
+            "/api/v1/users/avatar": 5 * 1024 * 1024,
+            "/api/v1/profiles/avatar": 5 * 1024 * 1024,
+            "/api/v1/users": 1 * 1024 * 1024,
+            "/api/v1/profiles": 1 * 1024 * 1024,
+            "/api/v1/auth/register": 100 * 1024,
+            "/api/v1/auth/login": 50 * 1024,
+            "/api/v1/addresses": 500 * 1024,
+            "/api/v1/bulk": 2 * 1024 * 1024,
         }
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        """
-        Process request validation for each request.
-        """
-        # Skip validation for excluded paths
+        """Middleware to validate incoming requests for the User Service."""
+
         if self._should_skip_validation(request.url.path):
             return await call_next(request)
 
-        # Extract correlation ID
         correlation_id = getattr(request.state, "correlation_id", "unknown")
-
         try:
-            # Validate request size with path-specific limits
             size_validation = await self._validate_request_size(request)
             if not size_validation["valid"]:
                 return await self._create_validation_error_response(
                     request, correlation_id, size_validation["error"], 413
                 )
 
-            # Validate content type
             content_type_validation = self._validate_content_type(request)
             if not content_type_validation["valid"]:
                 return await self._create_validation_error_response(
                     request, correlation_id, content_type_validation["error"], 415
                 )
 
-            # Validate required headers
             header_validation = self._validate_required_headers(request)
             if not header_validation["valid"]:
                 return await self._create_validation_error_response(
                     request, correlation_id, header_validation["error"], 400
                 )
 
-            # Check blocked paths
             if self._is_path_blocked(request.url.path):
                 return await self._create_validation_error_response(
                     request, correlation_id, "Path is blocked", 403
                 )
 
-            # Validate and sanitize request body for JSON requests
             if request.method in ["POST", "PUT", "PATCH"] and self._is_json_request(
                 request
             ):
@@ -134,7 +95,6 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                         request, correlation_id, body_validation["error"], 400
                     )
 
-            # Log successful validation
             logger.info(
                 "Request validation successful",
                 extra={
@@ -148,13 +108,10 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                     "event_type": "validation_success",
                 },
             )
-
-            # Process the request
             response = await call_next(request)
             return response
 
         except Exception as e:
-            # Unexpected validation error
             logger.error(
                 f"Request validation error: {str(e)}",
                 extra={
@@ -167,9 +124,6 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                 },
                 exc_info=True,
             )
-
-            # Return 400 for validation errors
-            from fastapi.responses import JSONResponse
 
             return JSONResponse(
                 status_code=400,
@@ -184,52 +138,41 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
             )
 
     def _should_skip_validation(self, path: str) -> bool:
-        """
-        Check if validation should be skipped for this path.
-        """
-        # Check exact matches
+        """Check if validation should be skipped for this path."""
+
         if path in self.exclude_paths:
             return True
 
-        # Check prefix matches
         for exclude_path in self.exclude_paths:
             if path.startswith(exclude_path):
                 return True
-
         return False
 
     def _is_path_blocked(self, path: str) -> bool:
-        """
-        Check if the path is blocked.
-        """
+        """Check if the path is blocked."""
+
         for blocked_path in self.blocked_paths:
             if path.startswith(blocked_path):
                 return True
         return False
 
     def _get_path_size_limit(self, path: str) -> int:
-        """
-        Get size limit for specific path.
-        """
-        # Check exact path matches
+        """Get size limit for specific path."""
+
         if path in self.path_size_limits:
             return self.path_size_limits[path]
 
-        # Check prefix matches
         for limit_path, limit in self.path_size_limits.items():
             if path.startswith(limit_path):
                 return limit
-
         return self.max_request_size
 
     async def _validate_request_size(self, request: Request) -> Dict[str, Any]:
-        """
-        Validate request size against path-specific limits.
-        """
+        """Validate request size against path-specific limits."""
+
         try:
             path_limit = self._get_path_size_limit(request.url.path)
 
-            # Check Content-Length header first
             content_length = request.headers.get("content-length")
             if content_length:
                 size = int(content_length)
@@ -239,7 +182,6 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                         "error": f"Request size {size} exceeds limit {path_limit} for path {request.url.path}",
                     }
 
-            # For requests with body, check actual size
             if request.method in ["POST", "PUT", "PATCH"]:
                 body = await request.body()
                 if len(body) > path_limit:
@@ -249,7 +191,6 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                     }
 
             return {"valid": True}
-
         except Exception as e:
             return {
                 "valid": False,
@@ -257,41 +198,33 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
             }
 
     def _validate_content_type(self, request: Request) -> Dict[str, Any]:
-        """
-        Validate request content type.
-        """
+        """Validate Content-Type header."""
+
         content_type = request.headers.get("content-type", "").lower()
 
-        # Allow requests without content-type for GET/HEAD/DELETE
         if request.method in ["GET", "HEAD", "DELETE"]:
             return {"valid": True}
 
-        # Special handling for file uploads
         if request.url.path in ["/api/v1/users/avatar", "/api/v1/profiles/avatar"]:
             if "multipart/form-data" in content_type:
                 return {"valid": True}
 
-        # Check if content-type is allowed
         if content_type:
-            # Check exact matches
             if content_type in self.allowed_content_types:
                 return {"valid": True}
 
-            # Check prefix matches (for charset, etc.)
             for allowed_type in self.allowed_content_types:
                 if content_type.startswith(allowed_type):
                     return {"valid": True}
-
         return {
             "valid": False,
             "error": f"Content-Type '{content_type}' is not allowed. Allowed types: {self.allowed_content_types}",
         }
 
     def _validate_required_headers(self, request: Request) -> Dict[str, Any]:
-        """
-        Validate required headers are present.
-        """
-        missing_headers = []
+        """Validate presence of required headers."""
+
+        missing_headers: list[str] = []
         for header in self.required_headers:
             if header.lower() not in [h.lower() for h in request.headers.keys()]:
                 missing_headers.append(header)
@@ -301,28 +234,23 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                 "valid": False,
                 "error": f"Missing required headers: {missing_headers}",
             }
-
         return {"valid": True}
 
     def _is_json_request(self, request: Request) -> bool:
-        """
-        Check if request is JSON.
-        """
+        """Check if request is JSON based on Content-Type header."""
+
         content_type = request.headers.get("content-type", "").lower()
         return "application/json" in content_type
 
     async def _validate_request_body(self, request: Request) -> Dict[str, Any]:
-        """
-        Validate and sanitize JSON request body.
-        """
+        """Validate JSON request body for User Service specific rules."""
+
         try:
-            # Read body
             body = await request.body()
 
             if not body:
                 return {"valid": True}
 
-            # Parse JSON
             try:
                 data = json.loads(body.decode("utf-8"))
             except json.JSONDecodeError as e:
@@ -331,17 +259,14 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                     "error": f"Invalid JSON: {str(e)}",
                 }
 
-            # User service specific validation
             validation_result = self._validate_user_service_data(data, request.url.path)
             if not validation_result["valid"]:
                 return validation_result
 
-            # Basic security checks
             security_result = self._validate_json_security(data)
             if not security_result["valid"]:
                 return security_result
 
-            # Store sanitized data in request state for endpoints to use
             request.state.validated_body = data
 
             return {"valid": True}
@@ -352,22 +277,22 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                 "error": f"Body validation failed: {str(e)}",
             }
 
-    def _validate_user_service_data(self, data: Any, path: str) -> Dict[str, Any]:
-        """
-        Perform user service specific data validation.
-        """
+    def _validate_user_service_data(
+        self, data: Dict[str, Any], path: str
+    ) -> Dict[str, Any]:
+        """Perform user service specific data validation."""
+
         try:
-            # Validate user registration data
             if path == "/api/v1/auth/register":
                 return self._validate_registration_data(data)
-            # Validate user update data
-            elif path.startswith("/api/v1/users/") and isinstance(data, dict):
+
+            elif path.startswith("/api/v1/users/"):
                 return self._validate_user_update_data(data)
-            # Validate profile data
-            elif path.startswith("/api/v1/profiles/") and isinstance(data, dict):
+
+            elif path.startswith("/api/v1/profiles/"):
                 return self._validate_profile_data(data)
-            # Validate address data
-            elif path.startswith("/api/v1/addresses/") and isinstance(data, dict):
+
+            elif path.startswith("/api/v1/addresses/"):
                 return self._validate_address_data(data)
 
             return {"valid": True}
@@ -379,9 +304,8 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
             }
 
     def _validate_registration_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate user registration data.
-        """
+        """Validate user registration data."""
+
         required_fields = ["email", "password"]
         for field in required_fields:
             if field not in data:
@@ -390,7 +314,6 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                     "error": f"Missing required field: {field}",
                 }
 
-        # Basic email format check
         email = data.get("email", "")
         if "@" not in email or "." not in email:
             return {
@@ -398,21 +321,17 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                 "error": "Invalid email format",
             }
 
-        # Password strength check
         password = data.get("password", "")
         if len(password) < 8:
             return {
                 "valid": False,
                 "error": "Password must be at least 8 characters long",
             }
-
         return {"valid": True}
 
     def _validate_user_update_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate user update data.
-        """
-        # Check for dangerous fields that shouldn't be updated directly
+        """Validate user update data."""
+
         dangerous_fields = ["id", "created_at", "updated_at", "is_active", "role"]
         for field in dangerous_fields:
             if field in data:
@@ -420,14 +339,11 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                     "valid": False,
                     "error": f"Field '{field}' cannot be updated directly",
                 }
-
         return {"valid": True}
 
     def _validate_profile_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate profile data.
-        """
-        # Validate phone number format if provided
+        """Validate profile data."""
+
         if "phone" in data:
             phone = data["phone"]
             if (
@@ -441,13 +357,11 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                     "valid": False,
                     "error": "Invalid phone number format",
                 }
-
         return {"valid": True}
 
     def _validate_address_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate address data.
-        """
+        """Validate address data."""
+
         required_fields = ["street", "city", "country", "postal_code"]
         for field in required_fields:
             if field not in data:
@@ -455,14 +369,11 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                     "valid": False,
                     "error": f"Missing required address field: {field}",
                 }
-
         return {"valid": True}
 
     def _validate_json_security(self, data: Any) -> Dict[str, Any]:
-        """
-        Perform security validation on JSON data.
-        """
-        # Check for nested objects depth (prevent deep recursion)
+        """Perform security checks on JSON data."""
+
         max_depth = 10
         if self._get_json_depth(data) > max_depth:
             return {
@@ -470,7 +381,6 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                 "error": f"JSON object too deeply nested (max depth: {max_depth})",
             }
 
-        # Check for extremely large arrays
         max_array_size = 1000
         if self._has_large_array(data, max_array_size):
             return {
@@ -478,58 +388,60 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                 "error": f"JSON contains array larger than {max_array_size} elements",
             }
 
-        # Check for potentially dangerous keys
         dangerous_keys = ["__proto__", "constructor", "prototype"]
         if self._has_dangerous_keys(data, dangerous_keys):
             return {
                 "valid": False,
                 "error": "JSON contains potentially dangerous keys",
             }
-
         return {"valid": True}
 
     def _get_json_depth(self, obj: Any, current_depth: int = 0) -> int:
-        """
-        Calculate JSON object depth.
-        """
-        if current_depth > 20:  # Safety limit
+        """Calculate the depth of a JSON object."""
+
+        if current_depth > 20:
             return current_depth
 
         if isinstance(obj, dict):
             return max(
-                (self._get_json_depth(v, current_depth + 1) for v in obj.values()),
+                (
+                    self._get_json_depth(cast(Any, v), current_depth + 1)
+                    for v in obj.values()  # type: ignore
+                ),
                 default=current_depth,
             )
         elif isinstance(obj, list):
             return max(
-                (self._get_json_depth(item, current_depth + 1) for item in obj),
+                (
+                    self._get_json_depth(cast(Any, item), current_depth + 1)
+                    for item in obj  # type: ignore
+                ),
                 default=current_depth,
             )
         else:
             return current_depth
 
     def _has_large_array(self, obj: Any, max_size: int) -> bool:
-        """
-        Check if JSON contains arrays that are too large.
-        """
-        if isinstance(obj, list) and len(obj) > max_size:
-            return True
+        """Check for large arrays in JSON."""
+
+        if isinstance(obj, list):
+            if len(cast(List[Any], obj)) > max_size:
+                return True
         elif isinstance(obj, dict):
-            return any(self._has_large_array(v, max_size) for v in obj.values())
+            return any(self._has_large_array(v, max_size) for v in obj.values())  # type: ignore
         return False
 
     def _has_dangerous_keys(self, obj: Any, dangerous_keys: List[str]) -> bool:
-        """
-        Check for dangerous keys in JSON.
-        """
+        """Check for dangerous keys in JSON."""
+
         if isinstance(obj, dict):
-            for key in obj.keys():
+            for key in obj.keys():  # type: ignore
                 if isinstance(key, str) and key.lower() in dangerous_keys:
                     return True
                 if self._has_dangerous_keys(obj[key], dangerous_keys):
                     return True
         elif isinstance(obj, list):
-            return any(self._has_dangerous_keys(item, dangerous_keys) for item in obj)
+            return any(self._has_dangerous_keys(item, dangerous_keys) for item in obj)  # type: ignore
         return False
 
     async def _create_validation_error_response(
@@ -539,10 +451,8 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
         error_message: str,
         status_code: int,
     ) -> Response:
-        """
-        Create a standardized validation error response.
-        """
-        # Log validation failure
+        """Create a standardized validation error response."""
+
         logger.warning(
             f"Request validation failed: {error_message}",
             extra={
@@ -558,9 +468,6 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
                 "event_type": "validation_failed",
             },
         )
-
-        from fastapi.responses import JSONResponse
-
         return JSONResponse(
             status_code=status_code,
             content={
@@ -579,32 +486,14 @@ class UserServiceRequestValidationMiddleware(BaseHTTPMiddleware):
 
 def setup_user_request_validation_middleware(
     app: FastAPI,
-    max_request_size: int = 10 * 1024 * 1024,  # 10MB
+    max_request_size: int = 10 * 1024 * 1024,
     allowed_content_types: Optional[List[str]] = None,
     required_headers: Optional[List[str]] = None,
     blocked_paths: Optional[List[str]] = None,
     exclude_paths: Optional[List[str]] = None,
 ) -> None:
-    """
-    Setup request validation middleware for User Service.
+    """Setup request validation middleware for the User Service."""
 
-    Args:
-        app: FastAPI application instance
-        max_request_size: Maximum request size in bytes
-        allowed_content_types: List of allowed content types
-        required_headers: List of required headers
-        blocked_paths: List of blocked path patterns
-        exclude_paths: List of paths to exclude from validation
-
-    Example:
-        setup_user_request_validation_middleware(
-            app,
-            max_request_size=5 * 1024 * 1024,  # 5MB
-            allowed_content_types=["application/json"],
-            required_headers=["Authorization"],
-            blocked_paths=["/admin/debug"],
-        )
-    """
     if exclude_paths is None:
         exclude_paths = [
             "/health",

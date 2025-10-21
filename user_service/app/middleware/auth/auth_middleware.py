@@ -1,50 +1,22 @@
-"""
-Authentication middleware for User Service.
-Handles JWT token validation, user context extraction, and authorization.
-"""
-
-import logging
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# Setup logger
-try:
-    from user_service.app.utils.logging import setup_user_logging
+from user_service.app.core.settings import get_settings
+from user_service.app.utils.jwt_handler import JWTHandler
+from user_service.app.utils.logging import setup_user_logging
 
-    logger = setup_user_logging("user_service_auth")
-except ImportError:
-    logger = logging.getLogger("user_service_auth")
-    logger.setLevel(logging.INFO)
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+logger = setup_user_logging("user_service_auth")
+settings = get_settings()
 
 
 class UserServiceAuthMiddleware(BaseHTTPMiddleware):
-    """
-    Authentication middleware for User Service.
+    """Middleware to authenticate requests using JWT tokens from cookies."""
 
-    Features:
-    - JWT token validation
-    - User context extraction
-    - Role-based access control
-    - Request authentication logging
-    - Correlation ID integration
-    """
-
-    def __init__(
-        self,
-        app: Any,
-        exclude_paths: Optional[list[str]] = None,
-        jwt_handler: Optional[Any] = None,
-    ):
+    def __init__(self, app: Any, exclude_paths: Optional[list[str]] = None):
         super().__init__(app)
         self.exclude_paths = exclude_paths or [
             "/health",
@@ -56,44 +28,39 @@ class UserServiceAuthMiddleware(BaseHTTPMiddleware):
             "/api/v1/auth/refresh",
         ]
         self.security = HTTPBearer(auto_error=False)
+        self.jwt_handler = JWTHandler(
+            secret_key=settings.SECRET_KEY, algorithm=settings.ALGORITHM
+        )
 
-        # Use provided JWT handler or create default one
-        if jwt_handler:
-            self.jwt_handler = jwt_handler
-        else:
-            # Import dependencies for JWT handling
-            from user_service.app.core.settings import get_settings
-            from user_service.app.utils.jwt_handler import JWTHandler
+    def _should_skip_auth(self, path: str) -> bool:
+        """Check if the request path should skip authentication."""
 
-            settings = get_settings()
-            self.jwt_handler = JWTHandler(
-                secret_key=settings.SECRET_KEY, algorithm=settings.ALGORITHM
-            )
+        if path in self.exclude_paths:
+            return True
+
+        for exclude_path in self.exclude_paths:
+            if path.startswith(exclude_path):
+                return True
+        return False
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        """
-        Process authentication for each request.
-        """
-        # Skip authentication for excluded paths
+        """Middleware to authenticate requests using JWT tokens from cookies."""
+
         if self._should_skip_auth(request.url.path):
             return await call_next(request)
 
-        # Extract correlation ID
         correlation_id = getattr(request.state, "correlation_id", "unknown")
 
         try:
-            # Extract and validate token
             auth_result = await self._authenticate_request(request)
 
             if auth_result["authenticated"]:
-                # Add user context to request state
                 request.state.user_id = auth_result["user_id"]
                 request.state.user_role = auth_result["user_role"]
                 request.state.token_data = auth_result["token_data"]
 
-                # Log successful authentication
                 logger.info(
                     "Request authenticated",
                     extra={
@@ -107,13 +74,10 @@ class UserServiceAuthMiddleware(BaseHTTPMiddleware):
                         "event_type": "auth_success",
                     },
                 )
-
-                # Process the request
                 response = await call_next(request)
                 return response
 
             else:
-                # Authentication failed
                 logger.warning(
                     f"Authentication failed: {auth_result['reason']}",
                     extra={
@@ -130,9 +94,6 @@ class UserServiceAuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
-                # Return 401 Unauthorized
-                from fastapi.responses import JSONResponse
-
                 return JSONResponse(
                     status_code=401,
                     content={
@@ -146,7 +107,6 @@ class UserServiceAuthMiddleware(BaseHTTPMiddleware):
                 )
 
         except Exception as e:
-            # Unexpected authentication error
             logger.error(
                 f"Authentication error: {str(e)}",
                 extra={
@@ -160,9 +120,6 @@ class UserServiceAuthMiddleware(BaseHTTPMiddleware):
                 exc_info=True,
             )
 
-            # Return 500 for auth system errors
-            from fastapi.responses import JSONResponse
-
             return JSONResponse(
                 status_code=500,
                 content={
@@ -174,43 +131,18 @@ class UserServiceAuthMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-    def _should_skip_auth(self, path: str) -> bool:
-        """
-        Check if authentication should be skipped for this path.
-        """
-        # Check exact matches
-        if path in self.exclude_paths:
-            return True
-
-        # Check prefix matches (for API versioning)
-        for exclude_path in self.exclude_paths:
-            if path.startswith(exclude_path):
-                return True
-
-        return False
-
     async def _authenticate_request(self, request: Request) -> Dict[str, Any]:
-        """
-        Authenticate the request using cookie tokens only.
+        """Authenticate the request using JWT token from cookies."""
 
-        Checks for authentication tokens in cookies.
-        No Authorization header support.
-
-        Returns:
-            Dict with authentication result
-        """
         try:
-            # Only check cookies for authentication tokens
             token = request.cookies.get("auth_token") or request.cookies.get(
                 "access_token"
             )
-
             if not token:
                 return {
                     "authenticated": False,
                     "reason": "missing_auth_cookie",
                 }
-
             if (
                 not token
                 or token == "null"
@@ -219,7 +151,6 @@ class UserServiceAuthMiddleware(BaseHTTPMiddleware):
             ):
                 return {"authenticated": False, "reason": "empty_cookie_token"}
 
-            # Validate token
             token_data = await self._validate_token(token)
 
             if not token_data:
@@ -238,33 +169,23 @@ class UserServiceAuthMiddleware(BaseHTTPMiddleware):
             return {"authenticated": False, "reason": "cookie_validation_error"}
 
     async def _validate_token(self, token: str) -> Optional[Dict[str, Any]]:
-        """
-        Validate JWT token and extract claims using JWTHandler.
+        """Validate JWT token and return token data."""
 
-        Performs proper JWT validation with signature verification and expiration checking.
-        """
         try:
-            # Decode and validate token using injected JWT handler
             token_data = self.jwt_handler.decode_token(token)
-
-            # Convert TokenData to dict format expected by middleware
             return {
                 "user_id": token_data.user_id,
                 "email": token_data.email,
                 "username": token_data.username,
-                "role": token_data.roles[0]
-                if token_data.roles
-                else "user",  # Primary role
+                "role": token_data.roles[0] if token_data.roles else "user",
                 "roles": token_data.roles,
                 "permissions": token_data.permissions,
                 "exp": int(token_data.expires_at.timestamp()),
-                "iat": token_data.expires_at.timestamp()
-                - 3600,  # Approximate issued time
+                "iat": token_data.expires_at.timestamp() - 3600,
                 "token_type": "access",
             }
 
         except ValueError as e:
-            # Token validation failed (expired, invalid signature, etc.)
             logger.warning(f"JWT validation failed: {str(e)}")
             return None
         except Exception as e:
@@ -273,18 +194,12 @@ class UserServiceAuthMiddleware(BaseHTTPMiddleware):
 
 
 class AuthenticatedUser:
-    """
-    Dependency class for FastAPI route authentication.
-    Use this in your route handlers to ensure authentication.
-    """
+    """Dependency to get authenticated user info from request."""
 
     def __init__(self, required_role: Optional[str] = None):
         self.required_role = required_role
 
     async def __call__(self, request: Request) -> Dict[str, Any]:
-        """
-        FastAPI dependency that ensures user is authenticated.
-        """
         user_id = getattr(request.state, "user_id", None)
         user_role = getattr(request.state, "user_role", None)
 
@@ -306,16 +221,9 @@ class AuthenticatedUser:
 def setup_user_auth_middleware(
     app: FastAPI,
     exclude_paths: Optional[list[str]] = None,
-    jwt_handler: Optional[Any] = None,
 ) -> None:
-    """
-    Setup authentication middleware for User Service.
+    """Setup authentication middleware for the User Service."""
 
-    Args:
-        app: FastAPI application instance
-        exclude_paths: List of paths to exclude from authentication
-        jwt_handler: Optional JWT handler instance to use for token validation
-    """
     if exclude_paths is None:
         exclude_paths = [
             "/health",
@@ -327,22 +235,18 @@ def setup_user_auth_middleware(
             "/api/v1/auth/refresh",
         ]
 
-    app.add_middleware(
-        UserServiceAuthMiddleware, exclude_paths=exclude_paths, jwt_handler=jwt_handler
-    )
+    app.add_middleware(UserServiceAuthMiddleware, exclude_paths=exclude_paths)
 
     logger.info(
         "User Service authentication middleware configured",
         extra={
             "service": "user_service",
             "excluded_paths": exclude_paths,
-            "jwt_handler_provided": jwt_handler is not None,
             "event_type": "auth_middleware_setup",
         },
     )
 
 
-# Convenience instances for route dependencies
-authenticated_user = AuthenticatedUser()  # Any authenticated user
-admin_user = AuthenticatedUser(required_role="admin")  # Admin only
-moderator_user = AuthenticatedUser(required_role="moderator")  # Moderator or admin
+authenticated_user = AuthenticatedUser()
+admin_user = AuthenticatedUser(required_role="admin")
+moderator_user = AuthenticatedUser(required_role="moderator")

@@ -15,9 +15,7 @@ logger = setup_logging("user_service.events.kafka", log_level=get_settings().LOG
 
 
 class KafkaEventPublisher(EventPublisher):
-    """
-    User Service Kafka publisher with connection retry logic
-    """
+    """User Service Kafka publisher with connection retry logic"""
 
     def __init__(
         self,
@@ -38,6 +36,7 @@ class KafkaEventPublisher(EventPublisher):
 
     async def ensure_topic_exists(self, topic_name: str):
         """Ensure a Kafka topic exists, creating it if necessary."""
+
         try:
             admin_client = AIOKafkaAdminClient(bootstrap_servers=self.bootstrap_servers)
             await admin_client.start()  # type: ignore
@@ -70,6 +69,7 @@ class KafkaEventPublisher(EventPublisher):
 
     async def start(self, timeout: float = 30.0) -> None:
         """Start Kafka producer with retry logic"""
+
         async with self._connection_lock:
             if self.producer and self.is_connected:
                 return
@@ -96,6 +96,7 @@ class KafkaEventPublisher(EventPublisher):
 
     async def _connect_with_retries(self, timeout: float) -> None:
         """Internal method to handle connection retries"""
+
         # Retry connection with exponential backoff
         for attempt in range(self.max_retries):
             try:
@@ -133,6 +134,7 @@ class KafkaEventPublisher(EventPublisher):
 
     async def stop(self) -> None:
         """Stop Kafka producer"""
+
         async with self._connection_lock:
             if self.producer:
                 try:
@@ -149,6 +151,7 @@ class KafkaEventPublisher(EventPublisher):
 
     async def publish(self, event: BaseEvent, topic: str = None) -> None:  # type: ignore
         """Publish event with fallback handling"""
+
         if not self.is_connected or not self.producer:
             if self.enable_graceful_degradation:
                 logger.warning(
@@ -217,6 +220,7 @@ class KafkaEventPublisher(EventPublisher):
 
     def _get_topic_for_event(self, event_type: str) -> str:
         """Map event type to Kafka topic"""
+
         topic_mapping = {
             "user.created": "user.events",
             "user.updated": "user.events",
@@ -240,6 +244,7 @@ class KafkaEventPublisher(EventPublisher):
 
     async def health_check(self) -> bool:
         """Check if Kafka connection is healthy"""
+
         try:
             if not self.producer or not self.is_connected:
                 return False
@@ -281,6 +286,7 @@ class KafkaEventSubscriber(EventSubscriber):
 
     async def start(self, timeout: float = 30.0):
         """Start event subscriber with retry logic"""
+
         if self.enable_graceful_degradation:
             # Start connection in background to not block startup
             asyncio.create_task(self._connect_with_retries(timeout))
@@ -293,6 +299,7 @@ class KafkaEventSubscriber(EventSubscriber):
 
     async def _connect_with_retries(self, timeout: float) -> None:
         """Internal method to handle connection retries"""
+
         for attempt in range(self.max_retries):
             try:
                 logger.info(
@@ -346,6 +353,7 @@ class KafkaEventSubscriber(EventSubscriber):
 
     async def stop(self):
         """Stop all consumers"""
+
         self.running = False
         self.is_connected = False
 
@@ -373,6 +381,7 @@ class KafkaEventSubscriber(EventSubscriber):
         self, topic: str, event_type: str, handler: EventHandler
     ) -> None:
         """Subscribe to an event type with connection handling"""
+
         if not self.is_connected:
             logger.warning(f"Cannot subscribe to {event_type} - Kafka not connected")
             return
@@ -421,6 +430,7 @@ class KafkaEventSubscriber(EventSubscriber):
 
     async def _consume_messages(self, topic: str, consumer: AIOKafkaConsumer):
         """Consume messages from a specific topic with error handling"""
+
         try:
             async for message in consumer:  # type: ignore
                 if not self.running:

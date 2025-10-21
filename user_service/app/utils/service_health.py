@@ -1,11 +1,3 @@
-"""
-User Service Health Check Utilities
-===================================
-
-Independent health check functionality for User service.
-No shared dependencies - completely self-contained.
-"""
-
 import time
 from typing import Any, Callable, Dict
 
@@ -20,10 +12,12 @@ class UserServiceHealthChecker:
 
     def add_check(self, name: str, check_func: Callable[[], Dict[str, Any]]) -> None:
         """Add a health check function"""
+
         self.checks[name] = check_func
 
     def run_checks(self) -> Dict[str, Any]:
         """Run all health checks with User Service specific context"""
+
         results = {}
         check_start_time = time.time()
 
@@ -68,7 +62,6 @@ class UserServiceHealthChecker:
             }
 
         def database_check() -> Dict[str, Any]:
-            # In a real implementation, this would ping the database
             return {
                 "status": "healthy",
                 "message": "User database accessible",
@@ -76,7 +69,6 @@ class UserServiceHealthChecker:
             }
 
         def auth_check() -> Dict[str, Any]:
-            # Check authentication service
             return {
                 "status": "healthy",
                 "message": "Authentication service operational",
@@ -92,6 +84,7 @@ def create_user_service_health_check(
     service_name: str = "user_service", version: str = "1.0.0"
 ) -> Dict[str, Any]:
     """Create basic User Service health check"""
+
     health_checker = UserServiceHealthChecker(service_name)
     health_checker.add_user_specific_checks()
     return health_checker.run_checks()

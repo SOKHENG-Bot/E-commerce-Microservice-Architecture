@@ -34,28 +34,6 @@ class AddressRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_addresses_by_user(self, user_id: int) -> List[Address]:
-        """Get all addresses for a user"""
-        result = await self.session.execute(
-            select(Address)
-            .where(Address.user_id == user_id)
-            .order_by(Address.is_default.desc(), Address.created_at)
-        )
-        return list(result.scalars().all())
-
-    async def get_default_address(
-        self, user_id: int, address_type: AddressTypeEnum
-    ) -> Optional[Address]:
-        """Get default address of specific type for a user"""
-        result = await self.session.execute(
-            select(Address).where(
-                Address.user_id == user_id,
-                Address.type == address_type,
-                Address.is_default,
-            )
-        )
-        return result.scalar_one_or_none()
-
     async def unset_default_addresses(
         self, user_id: int, address_type: AddressTypeEnum
     ) -> None:

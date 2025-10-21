@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 
 class TokenData(BaseModel):
+    """Data model for decoded JWT token information."""
+
     user_id: str
     email: str
     username: str
@@ -16,6 +18,8 @@ class TokenData(BaseModel):
 
 
 class JWTHandler:
+    """Utility class for handling JWT encoding and decoding."""
+
     def __init__(self, secret_key: str, algorithm: str):
         self.secret_key = secret_key
         self.algorithm = algorithm
@@ -23,6 +27,8 @@ class JWTHandler:
     def encode_token(
         self, payload: Dict[str, Any], expires_delta: Optional[timedelta] = None
     ) -> str:
+        """Encode a JWT token with the given payload and expiration."""
+
         to_encode = payload.copy()
         if expires_delta:
             expire = datetime.now(timezone.utc) + expires_delta
@@ -39,6 +45,8 @@ class JWTHandler:
         return token
 
     def decode_token(self, token: str) -> TokenData:
+        """Decode and validate a JWT token, returning the token data."""
+
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             user_id = payload.get("user_id")

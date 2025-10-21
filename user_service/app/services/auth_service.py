@@ -1,8 +1,3 @@
-"""
-Auth Service - Core Functions Only
-Business logic for essential user authentication operations
-"""
-
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -20,11 +15,14 @@ from user_service.app.repository.address_repository import AddressRepository
 from user_service.app.repository.profile_repository import ProfileRepository
 from user_service.app.repository.user_repository import UserRepository
 from user_service.app.schemas.user import (
-    LoginRequest,
-    PasswordChangeRequest,
-    PasswordResetConfirm,
-    PasswordResetRequest,
-    UserCreate,
+    CurrentUserRequest,
+    UserChangePasswordRequest,
+    UserForgotPasswordRequest,
+    UserLoginRequest,
+    UserRefreshTokenRequest,
+    UserRegistrationRequest,
+    UserResetPasswordRequest,
+    UserVerificationRequest,
 )
 from user_service.app.utils.jwt_handler import JWTHandler
 
@@ -50,37 +48,15 @@ class AuthService:
         self.address_repository = AddressRepository(session)
         self.profile_repository = ProfileRepository(session)
 
-    async def register_user(self, data: UserCreate) -> dict[str, str]:
+    async def register_user(self, data: UserRegistrationRequest) -> dict[str, str]:
         """Register a new user"""
-        import time
-
-        logger.info(
-            "User registration started",
-            extra={
-                "email": data.email,
-                "username": getattr(data, "username", None),
-                "phone_number": getattr(data, "phone_number", None),
-            },
-        )
 
         try:
-            # Check for existing user
-            existing_check_start = time.time()
             existing_user = await self.user_repository.query_email(data.email)
-            existing_check_duration = int((time.time() - existing_check_start) * 1000)
-
-            logger.debug(
-                "Existing user check completed",
-                extra={
-                    "email": data.email,
-                    "duration_ms": existing_check_duration,
-                    "user_exists": existing_user is not None,
-                },
-            )
 
             if existing_user:
                 logger.warning(
-                    "Registration failed - email already exists",
+                    "Registration failed, email already exists",
                     extra={
                         "email": data.email,
                         "existing_user_id": str(existing_user.id),
@@ -91,7 +67,6 @@ class AuthService:
                     detail="Email already registered.",
                 )
 
-            # Fetch default role or create default role
             role_stmt = await self.session.execute(
                 select(Role).where(Role.name == "customer")
             )
@@ -104,7 +79,6 @@ class AuthService:
                 self.session.add(role)
                 await self.session.flush()
 
-            # Fetch default permission or create default permission
             permission_stmt = await self.session.execute(
                 select(Permission).where(Permission.name == PermissionEnum.READ_USER)
             )
@@ -120,98 +94,53 @@ class AuthService:
                 roles=[role],
             )
 
-            # Add user to session but don't commit yet
             self.session.add(user)
-            await self.session.flush()  # Get the user.id without committing
-
-            # Create related records
+            await self.session.flush()
             profile = Profile(user_id=user.id, gender=None)
-
-            # Create default billing address
             address = Address(
                 user_id=user.id,
                 type="billing",
                 is_default=True,
             )
 
-            # Add all to session
             self.session.add(profile)
             self.session.add(address)
-
-            # Commit everything in one transaction
             await self.session.commit()
             await self.session.refresh(user)
-            new_user = user
 
             token_data: dict[str, Any] = {
-                "user_id": str(new_user.id),
-                "email": new_user.email,
+                "user_id": str(user.id),
+                "email": user.email,
                 "jti": str(uuid.uuid4()),
             }
             verify_token = jwt_handler.encode_token(
                 token_data, expires_delta=timedelta(minutes=5)
             )  # 5 minutes for email verification
 
-            # Publish user created event
             if self.event_publisher:
                 try:
-                    await self.event_publisher.publish_user_created(new_user)
-                    logger.info(
-                        "User created event published successfully",
-                        extra={
-                            "user_id": str(new_user.id),
-                            "email": new_user.email,
-                        },
-                    )
+                    await self.event_publisher.publish_user_created(user)
                 except Exception as e:
                     logger.error(
                         f"Failed to publish user created event: {e}",
                         extra={
-                            "user_id": str(new_user.id),
-                            "email": new_user.email,
+                            "user_id": str(user.id),
+                            "email": user.email,
                             "error": str(e),
                             "error_type": type(e).__name__,
                         },
                     )
-            logger.info(
-                "User created event published, now checking email verification",
-                extra={
-                    "user_id": str(new_user.id),
-                    "email": new_user.email,
-                },
-            )
-
-            # Publish email verification request event
-            logger.info(
-                "Checking event publisher availability",
-                extra={
-                    "user_id": str(new_user.id),
-                    "email": new_user.email,
-                    "event_publisher_exists": self.event_publisher is not None,
-                },
-            )
-
-            # Publish email verification request event
             if self.event_publisher:
                 try:
                     await self.event_publisher.publish_email_verification_request(
-                        user=new_user,
-                        verification_token=verify_token,
-                        expires_in_minutes=5,
-                    )
-                    logger.info(
-                        "Successfully published email verification request event",
-                        extra={
-                            "user_id": str(new_user.id),
-                            "email": new_user.email,
-                        },
+                        user, verify_token
                     )
                 except Exception as e:
                     logger.error(
                         f"Failed to publish email verification request event: {e}",
                         extra={
-                            "user_id": str(new_user.id),
-                            "email": new_user.email,
+                            "user_id": str(user.id),
+                            "email": user.email,
                             "error": str(e),
                             "error_type": type(e).__name__,
                         },
@@ -220,18 +149,11 @@ class AuthService:
                 logger.warning(
                     "Event publisher is None - email verification event not published",
                     extra={
-                        "user_id": str(new_user.id),
-                        "email": new_user.email,
+                        "user_id": str(user.id),
+                        "email": user.email,
                     },
                 )
 
-            logger.info(
-                "About to return from register_user function",
-                extra={
-                    "user_id": str(new_user.id),
-                    "email": new_user.email,
-                },
-            )
             return {
                 "verify_token": verify_token,
                 "expires_in_minutes": str(5),  # 5 minutes
@@ -247,15 +169,11 @@ class AuthService:
                 detail="Registration failed.",
             )
 
-    async def verify_email_token(self, token: str) -> bool:
+    async def verify_email_token(self, data: UserVerificationRequest) -> bool:
         """Verify user email with token"""
+
         try:
-            logger.info(f"Starting email verification for token: {token[:20]}...")
-            # Decode and validate the token
-            payload = jwt_handler.decode_token(token)
-            logger.info(
-                f"Token decoded successfully: user_id={payload.user_id}, email={payload.email}"
-            )
+            payload = jwt_handler.decode_token(data.verify_token)
             email = payload.email
             if not email:
                 logger.error("Token missing email field")
@@ -263,11 +181,7 @@ class AuthService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid token.",
                 )
-            # Query user by email, mark as verified, and update record to database
             user = await self.user_repository.query_email(email)
-            logger.info(
-                f"Found user: {user.id if user else None}, email matches: {user.email == email if user else False}"
-            )
             if not user or user.email != email:
                 logger.error(
                     f"User not found or email mismatch: requested={email}, found={user.email if user else None}"
@@ -277,29 +191,13 @@ class AuthService:
                     detail="User not found.",
                 )
             if user.is_verified:
-                logger.info("User already verified")
                 return True
             user.is_verified = True
             await self.user_repository.update(user)
 
-            # Publish email verification confirmation event
             if self.event_publisher:
                 try:
                     await self.event_publisher.publish_confirm_email_verification(user)
-                    logger.info(
-                        "Email verification confirmation event published successfully",
-                        extra={
-                            "user_id": str(user.id),
-                            "email": user.email,
-                        },
-                    )
-                    logger.info(
-                        "User email verified successfully.",
-                        extra={
-                            "user_id": str(user.id),
-                            "email": user.email,
-                        },
-                    )
                 except Exception as e:
                     logger.error(
                         f"Failed to publish email verification confirmation event: {e}",
@@ -318,14 +216,6 @@ class AuthService:
                         "email": user.email,
                     },
                 )
-            logger.info(
-                "User email verified successfully.",
-                extra={
-                    "user_id": str(user.id),
-                    "email": user.email,
-                },
-            )
-
             return True
         except HTTPException:
             raise
@@ -338,11 +228,12 @@ class AuthService:
 
     async def authenticate_user(
         self,
-        data: LoginRequest,
+        data: UserLoginRequest,
         request: Request,
         response: Response,
     ) -> User:
         """Authenticate user login"""
+
         try:
             user = await self.user_repository.query_email(data.email)
             if not user or not SecurityUtils.verify_password(
@@ -357,7 +248,6 @@ class AuthService:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="User account is inactive.",
                 )
-            # Update last login timestamp
             user.last_login = datetime.now(timezone.utc)
             await self.user_repository.update(user)
 
@@ -395,13 +285,6 @@ class AuthService:
                     user=user,
                     login_ip=login_details.get("ip_address") or "unknown",
                 )
-            logger.info(
-                "User authenticated successfully.",
-                extra={
-                    "user_id": str(user.id),
-                    "email": user.email,
-                },
-            )
             return user
         except HTTPException:
             raise
@@ -413,8 +296,9 @@ class AuthService:
                 detail="Authentication failed.",
             )
 
-    async def forgot_password(self, data: PasswordResetRequest) -> dict[str, str]:
+    async def forgot_password(self, data: UserForgotPasswordRequest) -> dict[str, str]:
         """Request password reset"""
+
         try:
             user = await self.user_repository.query_email(data.email)
             if not user:
@@ -438,13 +322,6 @@ class AuthService:
                     user, reset_token
                 )
 
-            logger.info(
-                "Password reset requested.",
-                extra={
-                    "user_id": str(user.id),
-                    "email": user.email,
-                },
-            )
             return {
                 "reset_token": reset_token,
                 "expires_in_minutes": str(15),
@@ -458,8 +335,9 @@ class AuthService:
                 detail="Password reset request failed.",
             )
 
-    async def reset_password(self, data: PasswordResetConfirm) -> User:
+    async def reset_password(self, data: UserResetPasswordRequest) -> User:
         """Reset password with token"""
+
         try:
             user = await self.user_repository.query_email(data.email)
             if not user:
@@ -470,17 +348,9 @@ class AuthService:
             user.password_hash = SecurityUtils.hash_password(data.new_password)
             updated_user = await self.user_repository.update(user)
 
-            # Publish password reset confirm event
             if self.event_publisher:
                 await self.event_publisher.publish_password_reset_confirm(updated_user)
 
-            logger.info(
-                "Password reset successfully.",
-                extra={
-                    "user_id": str(user.id),
-                    "email": user.email,
-                },
-            )
             return updated_user
         except HTTPException:
             raise
@@ -493,16 +363,17 @@ class AuthService:
             )
 
     async def change_password(
-        self, data: PasswordChangeRequest, current_user: User
+        self, current_user: CurrentUserRequest, data: UserChangePasswordRequest
     ) -> User:
         """Change password when logged in"""
+
         try:
             if not current_user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="User is not authenticated.",
                 )
-            user = await self.user_repository.query_email(current_user.email)
+            user = await self.user_repository.query_id(current_user.user_id)
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -517,13 +388,6 @@ class AuthService:
                 )
             user.password_hash = SecurityUtils.hash_password(data.new_password)
             updated_user = await self.user_repository.update(user)
-            logger.info(
-                "Password changed successfully.",
-                extra={
-                    "user_id": str(user.id),
-                    "email": user.email,
-                },
-            )
             return updated_user
         except HTTPException:
             raise
@@ -539,6 +403,7 @@ class AuthService:
         self, current_user: User, response: Response
     ) -> dict[str, str]:
         """Logout user"""
+
         try:
             if not current_user:
                 raise HTTPException(
@@ -547,17 +412,9 @@ class AuthService:
                 )
             response.delete_cookie(key="access_token")
 
-            # Publish logout event
             if self.event_publisher:
                 await self.event_publisher.publish_logout(current_user)
 
-            logger.info(
-                "User logged out successfully.",
-                extra={
-                    "user_id": str(current_user.id),
-                    "email": current_user.email,
-                },
-            )
             return {"Message": "Logged out successfully."}
         except HTTPException:
             raise
@@ -568,11 +425,14 @@ class AuthService:
                 detail="Logout failed.",
             )
 
-    async def refresh_access_token(self, refresh_token: str) -> dict[str, Any]:
+    async def refresh_access_token(
+        self, data: UserRefreshTokenRequest
+    ) -> dict[str, Any]:
         """Refresh access token using refresh token"""
+
         try:
             # Decode refresh token
-            payload = jwt_handler.decode_token(refresh_token)
+            payload = jwt_handler.decode_token(data.refresh_token)
             user_id = payload.user_id
             email = payload.email
 
@@ -581,7 +441,6 @@ class AuthService:
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid refresh token.",
                 )
-
             # Verify user still exists and is active
             user = await self.user_repository.query_email(email)
             if not user or not user.is_active or str(user.id) != user_id:
@@ -589,7 +448,6 @@ class AuthService:
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid user or user inactive.",
                 )
-
             # Generate new access token
             token_data: dict[str, Any] = {
                 "user_id": str(user.id),
@@ -597,20 +455,10 @@ class AuthService:
                 "username": user.username,
                 "jti": str(uuid.uuid4()),
             }
-
             new_access_token = jwt_handler.encode_token(
                 token_data,
                 expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
             )
-
-            logger.info(
-                "Access token refreshed successfully.",
-                extra={
-                    "user_id": str(user.id),
-                    "email": user.email,
-                },
-            )
-
             return {
                 "access_token": new_access_token,
                 "token_type": "bearer",
